@@ -7,6 +7,7 @@
   "scripts": {
     "build": "prisma generate && tsc",
     "dev": "tsc -w",
+    "verify": "tsx src/verify.ts",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push"
   },

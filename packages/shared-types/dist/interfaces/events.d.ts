@@ -1,0 +1,32 @@
+import { MetricEventType, Channel } from '../enums';
+export interface IRedisEvent<T = any> {
+    id: string;
+    source: string;
+    timestamp: string;
+    channel: string;
+    payload: T;
+}
+export interface IAppointmentScheduledEvent {
+    clinicId: string;
+    appointmentId: string;
+    conversationId: string;
+    scheduledAt: string;
+    doctorName: string;
+    treatmentName: string;
+    contactName: string;
+    channel: Channel;
+}
+export interface IHumanEscalationEvent {
+    clinicId: string;
+    conversationId: string;
+    contactName: string;
+    channel: Channel;
+    lastMessage?: string;
+}
+export interface IMetricEventPayload {
+    clinicId: string;
+    type: MetricEventType;
+    conversationId?: string;
+    value?: any;
+}
+//# sourceMappingURL=events.d.ts.map

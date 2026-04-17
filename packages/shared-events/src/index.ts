@@ -1,3 +1,2 @@
-export const REDIS_CHANNELS = {
-  USER_INVITED: 'user.invited'
-};
+export * from './channels';
+export * from './event-bus';
