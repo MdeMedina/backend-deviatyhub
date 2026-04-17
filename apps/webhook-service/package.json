@@ -1,0 +1,20 @@
+{
+  "name": "@deviaty/webhook-service",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main",
+    "dev": "tsx watch src/main.ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "fastify": "^4.0.0",
+    "bullmq": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "tsx": "latest"
+  }
+}
