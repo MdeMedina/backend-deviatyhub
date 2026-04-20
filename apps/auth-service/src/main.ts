@@ -1,1 +1,33 @@
-async function bootstrap() { console.log('Starting apps/auth-service'); } bootstrap();
+import { NestFactory } from '@nestjs/core';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
+import { ValidationPipe } from '@nestjs/common';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    new FastifyAdapter({ logger: true }),
+  );
+
+  // Prefijo global para la API
+  app.setGlobalPrefix('api');
+
+  // Configuración global de pipes para validación de DTOs
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
+
+  const port = process.env.PORT || 3001;
+  await app.listen(port, '0.0.0.0');
+  
+  console.log(`🔐 Auth Service is running on: http://localhost:${port}/api`);
+}
+
+bootstrap();

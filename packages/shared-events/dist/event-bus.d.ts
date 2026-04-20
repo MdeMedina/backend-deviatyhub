@@ -14,6 +14,14 @@ export declare class EventBus {
      */
     publish<T>(channel: string, payload: T): Promise<void>;
     /**
+     * Guarda un valor con tiempo de expiración (para blacklist, etc)
+     */
+    setKey(key: string, value: string, ttlSeconds: number): Promise<void>;
+    /**
+     * Recupera un valor por su llave
+     */
+    getKey(key: string): Promise<string | null>;
+    /**
      * Se suscribe a un canal y ejecuta un handler por cada mensaje recibido
      * @param channel Nombre del canal
      * @param handler Función para procesar el payload del evento

@@ -1,4 +1,4 @@
-import { ClinicPlan, ConversationStatus, ConversationStep, AppointmentStatus, AppointmentSource, MessageRole, IntegrationType, Channel, AuditAction, MetricEventType } from '../enums';
+import { ClinicPlan, UserRole, ConversationStatus, ConversationStep, AppointmentStatus, AppointmentSource, MessageRole, IntegrationType, Channel, AuditAction, MetricEventType } from '../enums';
 export interface IClinic {
     id: string;
     name: string;
@@ -193,5 +193,14 @@ export interface IAuditLog {
         after: any;
     };
     created_at: Date;
+}
+export interface IJwtPayload {
+    userId: string;
+    clinicId: string;
+    role: UserRole;
+    email: string;
+    permissions: IPermissions;
+    iat?: number;
+    exp?: number;
 }
 //# sourceMappingURL=domain.d.ts.map

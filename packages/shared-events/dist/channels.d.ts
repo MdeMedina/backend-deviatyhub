@@ -4,6 +4,7 @@
  */
 export declare enum REDIS_CHANNELS {
     USER_INVITED = "user.invited",
+    USER_CREATED = "user.created",
     CLINIC_CONFIG_UPDATED = "clinic.config.updated",
     INTEGRATION_CONNECTED = "integration.connected",
     AGENT_CONFIG_UPDATED = "agent.config.updated",

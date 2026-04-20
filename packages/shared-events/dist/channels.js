@@ -9,6 +9,7 @@ var REDIS_CHANNELS;
 (function (REDIS_CHANNELS) {
     // Autenticación y Usuarios
     REDIS_CHANNELS["USER_INVITED"] = "user.invited";
+    REDIS_CHANNELS["USER_CREATED"] = "user.created";
     // Configuración Clínica
     REDIS_CHANNELS["CLINIC_CONFIG_UPDATED"] = "clinic.config.updated";
     REDIS_CHANNELS["INTEGRATION_CONNECTED"] = "integration.connected";

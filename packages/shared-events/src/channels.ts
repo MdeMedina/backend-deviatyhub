@@ -5,6 +5,7 @@
 export enum REDIS_CHANNELS {
   // Autenticación y Usuarios
   USER_INVITED = 'user.invited',
+  USER_CREATED = 'user.created',
   
   // Configuración Clínica
   CLINIC_CONFIG_UPDATED = 'clinic.config.updated',
