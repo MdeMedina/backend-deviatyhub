@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: 'Inter', Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+        .header { margin-bottom: 30px; text-align: center; }
+        .content { background: #fff; padding: 40px; border-radius: 12px; border: 1px solid #eee; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .details-grid { background: #f9f9f9; padding: 25px; border-radius: 8px; margin: 25px 0; }
+        .detail-row { margin-bottom: 15px; display: flex; align-items: baseline; }
+        .detail-label { font-size: 13px; color: #777; width: 100px; font-weight: 600; text-transform: uppercase; }
+        .detail-value { font-size: 16px; color: #111; font-weight: 500; }
+        .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #999; }
+        h1 { color: #111; font-size: 24px; margin-bottom: 10px; }
+        .highlight { color: #000; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <strong>{{clinicName}}</strong>
+        </div>
+        <div class="content">
+            <h1>Cita Confirmada</h1>
+            <p>Hola <span class="highlight">{{patientName}}</span>, tu cita ha sido programada exitosamente.</p>
+            
+            <div class="details-grid">
+                <div class="detail-row">
+                    <div class="detail-label">Servicio</div>
+                    <div class="detail-value">{{treatmentName}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Especialista</div>
+                    <div class="detail-value">{{doctorName}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Fecha</div>
+                    <div class="detail-value">{{date}}</div>
+                </div>
+                <div class="detail-row">
+                    <div class="detail-label">Hora</div>
+                    <div class="detail-value">{{time}}</div>
+                </div>
+                {{#if location}}
+                <div class="detail-row">
+                    <div class="detail-label">📍 Ubicación</div>
+                    <div class="detail-value">{{location}}</div>
+                </div>
+                {{/if}}
+            </div>
+
+            <p style="font-size: 14px; color: #666;">Si necesitas reprogramar o cancelar tu cita, por favor contáctanos con al menos 24 horas de anticipación.</p>
+        </div>
+        <div class="footer">
+            Enviado via Deviaty Hub para {{clinicName}}.
+        </div>
+    </div>
+</body>
+</html>

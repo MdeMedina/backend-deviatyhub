@@ -389,6 +389,7 @@ model ClinicContact {
   id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   clinicId          String   @map("clinic_id") @db.Uuid
   phone             String?
+  email             String?
   instagramUser     String?  @map("instagram_user")
   name              String?
   lastInteractionAt DateTime? @map("last_interaction_at") @db.Timestamptz
