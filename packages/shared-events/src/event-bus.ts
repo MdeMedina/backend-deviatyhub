@@ -33,6 +33,20 @@ export class EventBus {
   }
 
   /**
+   * Guarda un valor con tiempo de expiración (para blacklist, etc)
+   */
+  async setKey(key: string, value: string, ttlSeconds: number): Promise<void> {
+    await this.publisher.setex(key, ttlSeconds, value);
+  }
+
+  /**
+   * Recupera un valor por su llave
+   */
+  async getKey(key: string): Promise<string | null> {
+    return this.publisher.get(key);
+  }
+
+  /**
    * Se suscribe a un canal y ejecuta un handler por cada mensaje recibido
    * @param channel Nombre del canal
    * @param handler Función para procesar el payload del evento

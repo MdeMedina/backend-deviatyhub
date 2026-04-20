@@ -15,7 +15,15 @@
     "ignoreDeprecations": "6.0",
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@deviaty/shared-types": ["packages/shared-types/dist"],
+      "@deviaty/shared-utils": ["packages/shared-utils/dist"],
+      "@deviaty/shared-prisma": ["packages/shared-prisma/dist"],
+      "@deviaty/shared-events": ["packages/shared-events/dist"],
+      "@deviaty/shared-nestjs": ["packages/shared-nestjs/dist"]
+    }
   },
   "exclude": ["node_modules", "dist", "**/*.verify.ts", "src/verify.ts"]
 }

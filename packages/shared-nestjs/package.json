@@ -1,0 +1,22 @@
+{
+  "name": "@deviaty/shared-nestjs",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w"
+  },
+  "devDependencies": {
+    "@deviaty/shared-types": "^1.0.0",
+    "@types/node": "^25.6.0",
+    "typescript": "latest"
+  },
+  "dependencies": {
+    "@deviaty/shared-prisma": "^1.0.0",
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "rxjs": "^7.8.1"
+  }
+}

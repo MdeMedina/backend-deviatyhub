@@ -12,6 +12,7 @@
     "prisma:push": "prisma db push"
   },
   "dependencies": {
+    "@nestjs/common": "^11.0.1",
     "@prisma/client": "^6.19.3"
   },
   "devDependencies": {

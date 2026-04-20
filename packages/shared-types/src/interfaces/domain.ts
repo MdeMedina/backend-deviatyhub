@@ -181,3 +181,13 @@ export interface IAuditLog {
   };
   created_at: Date;
 }
+
+export interface IJwtPayload {
+  userId: string;
+  clinicId: string;
+  role: UserRole;
+  email: string;
+  permissions: IPermissions;
+  iat?: number;
+  exp?: number;
+}

@@ -9,6 +9,8 @@ async function bootstrap() {
     new FastifyAdapter()
   );
 
+  app.setGlobalPrefix('api');
+
   // Configuración de validación global
   app.useGlobalPipes(
     new ValidationPipe({

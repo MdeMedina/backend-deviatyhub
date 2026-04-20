@@ -6,6 +6,7 @@ const common_1 = require("@nestjs/common");
 const app_module_1 = require("./app.module");
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule, new platform_fastify_1.FastifyAdapter());
+    app.setGlobalPrefix('api');
     // Configuración de validación global
     app.useGlobalPipes(new common_1.ValidationPipe({
         whitelist: true,
