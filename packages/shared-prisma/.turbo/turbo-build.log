@@ -5,7 +5,7 @@
 
 Prisma schema loaded from prisma/schema.prisma
 
-✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 142ms
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 99ms
 
 Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
 

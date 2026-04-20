@@ -98,6 +98,149 @@ let AgendaService = class AgendaService {
             available: true
         }));
     }
+    // --- APPOINTMENTS ---
+    async findAllAppointments(clinicId, from, to, doctorId) {
+        return this.prisma.appointment.findMany({
+            where: {
+                clinicId,
+                scheduledAt: {
+                    gte: new Date(`${from}T00:00:00Z`),
+                    lte: new Date(`${to}T23:59:59Z`),
+                },
+                ...(doctorId ? { doctorId } : {}),
+            },
+            include: {
+                contact: true,
+                treatment: true,
+                doctor: true,
+            },
+            orderBy: { scheduledAt: 'asc' },
+        });
+    }
+    async findOneAppointment(clinicId, id) {
+        const appointment = await this.prisma.appointment.findFirst({
+            where: { id, clinicId },
+            include: {
+                contact: true,
+                treatment: true,
+                doctor: true,
+                history: { orderBy: { createdAt: 'desc' } },
+            },
+        });
+        if (!appointment)
+            throw new common_1.NotFoundException('Cita no encontrada');
+        return appointment;
+    }
+    async createAppointment(clinicId, dto) {
+        const { contact_id, contact_name, contact_phone, treatment_id, doctor_id, scheduled_at, ...rest } = dto;
+        return this.prisma.$transaction(async (tx) => {
+            // 1. Resolver contacto
+            let finalContactId = contact_id;
+            if (!finalContactId && contact_phone) {
+                let contact = await tx.clinicContact.findFirst({
+                    where: { clinicId, phone: contact_phone },
+                });
+                if (!contact) {
+                    contact = await tx.clinicContact.create({
+                        data: { clinicId, phone: contact_phone, name: contact_name },
+                    });
+                }
+                finalContactId = contact.id;
+            }
+            // 2. Obtener duración del tratamiento
+            const treatment = await tx.treatment.findUnique({ where: { id: treatment_id } });
+            if (!treatment)
+                throw new common_1.NotFoundException('Tratamiento no encontrado');
+            // 3. Validar disponibilidad (Simplificado: Check if any appointment overlaps at same time/doctor)
+            // En prod, esto debería usar la lógica de getAvailableSlots completa
+            const overlap = await tx.appointment.findFirst({
+                where: {
+                    clinicId,
+                    doctorId: doctor_id,
+                    status: { notIn: ['CANCELLED'] },
+                    scheduledAt: scheduled_at,
+                },
+            });
+            if (overlap)
+                throw new common_1.BadRequestException('El horario ya está ocupado');
+            // 4. Crear cita
+            const appointment = await tx.appointment.create({
+                data: {
+                    clinicId,
+                    contactId: finalContactId,
+                    treatmentId: treatment_id,
+                    doctorId: doctor_id,
+                    scheduledAt: scheduled_at,
+                    durationMin: treatment.durationAvgMin || 30,
+                    contactName: contact_name,
+                    ...rest,
+                },
+            });
+            // 5. Registrar historia
+            await tx.appointmentHistory.create({
+                data: {
+                    appointmentId: appointment.id,
+                    event: 'created',
+                    payload: { source: rest.source || 'AGENT' },
+                },
+            });
+            return appointment;
+        });
+    }
+    async updateStatus(clinicId, id, status, notes) {
+        const appointment = await this.findOneAppointment(clinicId, id);
+        return this.prisma.$transaction(async (tx) => {
+            const updated = await tx.appointment.update({
+                where: { id },
+                data: { status: status, notes: notes || appointment.notes },
+            });
+            await tx.appointmentHistory.create({
+                data: {
+                    appointmentId: id,
+                    event: `status_changed_${status.toLowerCase()}`,
+                    payload: { notes },
+                },
+            });
+            return updated;
+        });
+    }
+    async reschedule(clinicId, id, newDate, notes) {
+        const appointment = await this.findOneAppointment(clinicId, id);
+        return this.prisma.$transaction(async (tx) => {
+            // Validar disponibilidad en nueva fecha (mismo doctor)
+            const overlap = await tx.appointment.findFirst({
+                where: {
+                    clinicId,
+                    doctorId: appointment.doctorId,
+                    status: { notIn: ['CANCELLED'] },
+                    scheduledAt: newDate,
+                    id: { not: id },
+                },
+            });
+            if (overlap)
+                throw new common_1.BadRequestException('El nuevo horario ya está ocupado');
+            const updated = await tx.appointment.update({
+                where: { id },
+                data: {
+                    scheduledAt: newDate,
+                    status: 'RESCHEDULED',
+                    notes: notes || appointment.notes
+                },
+            });
+            await tx.appointmentHistory.create({
+                data: {
+                    appointmentId: id,
+                    event: 'rescheduled',
+                    payload: {
+                        old_date: appointment.scheduledAt,
+                        new_date: newDate,
+                        notes
+                    },
+                },
+            });
+            return updated;
+        });
+    }
 };
 exports.AgendaService = AgendaService;
 exports.AgendaService = AgendaService = __decorate([

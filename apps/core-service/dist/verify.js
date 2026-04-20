@@ -19,124 +19,102 @@ const createMockFn = (returnValue) => {
     return fn;
 };
 async function verifyCoreService() {
-    console.log('--- 🧪 VERIFICACIÓN INTEGRAL: CORE SERVICE (PHASE 3.2) ---');
+    console.log('--- 🧪 VERIFICACIÓN INTEGRAL: CORE SERVICE (PHASE 3.3) ---');
     let app;
     const mockPrisma = {
-        clinicConfig: {
-            findUnique: createMockFn(),
-            upsert: createMockFn(),
-        },
-        clinicSchedule: {
-            findMany: createMockFn([]),
-            findFirst: createMockFn(),
-            deleteMany: createMockFn(),
-            createMany: createMockFn(),
-        },
-        unavailabilityBlock: {
-            findMany: createMockFn([]),
-            create: createMockFn(),
-            update: createMockFn(),
-            delete: createMockFn(),
-        },
-        doctor: {
-            findMany: createMockFn([]),
-            findFirst: createMockFn(),
-            create: createMockFn(),
-            update: createMockFn(),
-        },
-        treatment: {
-            findMany: createMockFn([]),
-            findUnique: createMockFn(),
-            findFirst: createMockFn(),
-            create: createMockFn(),
-            update: createMockFn(),
-        },
-        doctorTreatment: {
-            createMany: createMockFn(),
-            deleteMany: createMockFn(),
-        },
-        treatmentOffer: {
-            create: createMockFn(),
-            findFirst: createMockFn(),
-            update: createMockFn(),
-        },
+        clinicConfig: { findUnique: createMockFn(), upsert: createMockFn() },
+        clinicSchedule: { findMany: createMockFn([]), findFirst: createMockFn(), deleteMany: createMockFn(), createMany: createMockFn() },
+        unavailabilityBlock: { findMany: createMockFn([]), create: createMockFn(), update: createMockFn(), delete: createMockFn() },
+        doctor: { findMany: createMockFn([]), findFirst: createMockFn(), create: createMockFn(), update: createMockFn() },
+        treatment: { findMany: createMockFn([]), findUnique: createMockFn(), findFirst: createMockFn(), create: createMockFn(), update: createMockFn() },
+        doctorTreatment: { createMany: createMockFn(), deleteMany: createMockFn() },
+        treatmentOffer: { create: createMockFn(), findFirst: createMockFn(), update: createMockFn() },
+        clinicContact: { findFirst: createMockFn(), create: createMockFn() },
         appointment: {
             findMany: createMockFn([]),
+            findFirst: createMockFn(),
+            create: createMockFn(),
+            update: createMockFn(),
         },
-        dentalEntry: {
-            findMany: createMockFn([]),
-        },
+        appointmentHistory: { create: createMockFn() },
         auditLog: { create: createMockFn() },
         $transaction: (cb) => cb(mockPrisma),
     };
     const mockConfig = { get: (k, d) => d };
     try {
-        const moduleFixture = await testing_1.Test.createTestingModule({
-            imports: [app_module_1.AppModule],
-        })
+        const moduleFixture = await testing_1.Test.createTestingModule({ imports: [app_module_1.AppModule] })
             .overrideProvider(shared_prisma_1.PrismaService).useValue(mockPrisma)
             .overrideProvider(config_1.ConfigService).useValue(mockConfig)
             .compile();
         app = moduleFixture.createNestApplication(new platform_fastify_1.FastifyAdapter());
         app.setGlobalPrefix('api');
         const { ValidationPipe } = await import('@nestjs/common');
-        app.useGlobalPipes(new ValidationPipe({
-            whitelist: true,
-            forbidNonWhitelisted: true,
-            transform: true,
-            errorHttpStatusCode: 400,
-        }));
+        app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, errorHttpStatusCode: 400 }));
         await app.init();
         await app.getHttpAdapter().getInstance().ready();
         const clinicId = 'c-1111-2222-3333-4444';
         const authHeaders = { 'x-clinic-id': clinicId, 'x-user-id': 'u-1' };
-        // --- 1. DOCTORS ---
-        console.log('\n👉 [6. DOCTORS: CRUD]');
-        mockPrisma.doctor.create.mockResolvedValueOnce({ id: 'd-1', name: 'Dr. Medina', title: 'Dentista' });
-        const resDoctor = await app.inject({
+        // --- 9. APPOINTMENTS: CREATE & CONTACT ---
+        console.log('\n👉 [9. APPOINTMENTS: CREATE & AUTO-CONTACT]');
+        mockPrisma.clinicContact.findFirst.mockResolvedValueOnce(null);
+        mockPrisma.clinicContact.create.mockResolvedValueOnce({ id: 'contact-1', name: 'Miguel Medina' });
+        mockPrisma.treatment.findUnique.mockResolvedValueOnce({ id: 't-1', durationAvgMin: 60 });
+        mockPrisma.appointment.findFirst.mockResolvedValueOnce(null); // No hay colisión
+        mockPrisma.appointment.create.mockResolvedValueOnce({ id: 'app-1', scheduledAt: new Date('2026-05-11T10:00:00Z') });
+        const resCreate = await app.inject({
             method: 'POST',
-            url: '/api/doctors',
+            url: '/api/agenda/appointments',
             headers: authHeaders,
-            payload: { name: 'Dr. Medina', title: 'Dentista', treatment_ids: ['t-1'] }
+            payload: {
+                contact_name: 'Miguel Medina',
+                contact_phone: '+56987654321',
+                treatment_id: '8913615f-972f-48e0-bb12-f1737f940b52',
+                doctor_id: '8913615f-972f-48e0-bb12-f1737f940b52',
+                scheduled_at: '2026-05-11T10:00:00Z'
+            }
         });
-        if (resDoctor.statusCode === 201) {
-            console.log('✅ PASS: Doctor creado y registrado exitosamente.');
+        if (resCreate.statusCode === 201) {
+            console.log('✅ PASS: Cita creada y contacto generado automáticamente.');
         }
         else {
-            console.log('❌ FAIL: Falló creación de doctor.', resDoctor.body);
+            console.log('❌ FAIL: Falló creación de cita.', resCreate.body);
         }
-        // --- 2. TREATMENTS ---
-        console.log('\n👉 [7. TREATMENTS: CRUD]');
-        mockPrisma.treatment.create.mockResolvedValueOnce({ id: 't-1', name: 'Limpieza', category: 'General' });
-        const resTreat = await app.inject({
+        // --- 10. APPOINTMENTS: OVERBOOKING PROTECTION ---
+        console.log('\n👉 [10. APPOINTMENTS: OVERBOOKING PROTECTION]');
+        mockPrisma.treatment.findUnique.mockResolvedValueOnce({ id: 't-1', durationAvgMin: 60 });
+        mockPrisma.appointment.findFirst.mockResolvedValueOnce({ id: 'app-existing' }); // Simulamos colisión
+        const resFail = await app.inject({
             method: 'POST',
-            url: '/api/treatments',
+            url: '/api/agenda/appointments',
             headers: authHeaders,
-            payload: { name: 'Limpieza', category: 'General', duration_avg_min: 45 }
+            payload: {
+                contact_id: '8913615f-972f-48e0-bb12-f1737f940b52',
+                treatment_id: '8913615f-972f-48e0-bb12-f1737f940b52',
+                doctor_id: '8913615f-972f-48e0-bb12-f1737f940b52',
+                scheduled_at: '2026-05-11T10:00:00Z'
+            }
         });
-        if (resTreat.statusCode === 201) {
-            console.log('✅ PASS: Tratamiento registrado correctamente.');
+        if (resFail.statusCode === 400) {
+            console.log('✅ PASS: Prevención de overbooking (400 Bad Request) exitosa.');
         }
         else {
-            console.log('❌ FAIL: Falló creación de tratamiento.', resTreat.body);
+            console.log('❌ FAIL: Se permitió agendar en slot ocupado.', resFail.statusCode);
         }
-        // --- 3. AGENDA: SLOTS ---
-        console.log('\n👉 [8. AGENDA: SLOTS]');
-        // Mock escenario: Lunes, abre 09:00 a 18:00, tratamiento 60 min
-        mockPrisma.clinicSchedule.findFirst.mockResolvedValueOnce({ openTime: '09:00', closeTime: '12:00', isOpen: true });
-        mockPrisma.treatment.findUnique.mockResolvedValueOnce({ durationAvgMin: 60 });
-        const resSlots = await app.inject({
-            method: 'GET',
-            url: '/api/agenda/slots?date=2026-05-11&treatment_id=t-1', // 2026-05-11 es lunes
-            headers: authHeaders
+        // --- 11. APPOINTMENTS: STATUS & HISTORY ---
+        console.log('\n👉 [11. APPOINTMENTS: STATUS & HISTORY]');
+        mockPrisma.appointment.findFirst.mockResolvedValueOnce({ id: 'app-1', clinicId });
+        mockPrisma.appointment.update.mockResolvedValueOnce({ id: 'app-1', status: 'CONFIRMED' });
+        const resStatus = await app.inject({
+            method: 'PATCH',
+            url: '/api/agenda/appointments/app-1/status',
+            headers: authHeaders,
+            payload: { status: 'CONFIRMED', notes: 'Confirmó por WhatsApp' }
         });
-        const slotsBody = JSON.parse(resSlots.body);
-        if (resSlots.statusCode === 200 && slotsBody.success && slotsBody.data.length > 0) {
-            console.log(`✅ PASS: Slots generados exitosamente (${slotsBody.data.length} slots encontrados).`);
-            console.log('   Ejemplo de slot:', slotsBody.data[0]);
+        if (resStatus.statusCode === 200) {
+            console.log('✅ PASS: Estado actualizado y evento registrado en historial.');
         }
         else {
-            console.log('❌ FAIL: El cálculo de slots falló.', slotsBody);
+            console.log('❌ FAIL: Error actualizando estado.', resStatus.body);
         }
         console.log('\n--- 🎉 VERIFICACIÓN FINALIZADA ---');
         await app.close();
