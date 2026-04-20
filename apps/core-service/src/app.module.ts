@@ -8,6 +8,9 @@ import {
 } from '@deviaty/shared-nestjs';
 import { PrismaModule } from './prisma/prisma.module';
 import { ClinicModule } from './clinic/clinic.module';
+import { DoctorModule } from './doctor/doctor.module';
+import { TreatmentModule } from './treatment/treatment.module';
+import { AgendaModule } from './agenda/agenda.module';
 
 @Module({
   imports: [
@@ -16,6 +19,9 @@ import { ClinicModule } from './clinic/clinic.module';
     }),
     PrismaModule,
     ClinicModule,
+    DoctorModule,
+    TreatmentModule,
+    AgendaModule,
   ],
   controllers: [],
   providers: [

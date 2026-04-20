@@ -13,6 +13,9 @@ const core_1 = require("@nestjs/core");
 const shared_nestjs_1 = require("../../../packages/shared-nestjs/dist");
 const prisma_module_1 = require("./prisma/prisma.module");
 const clinic_module_1 = require("./clinic/clinic.module");
+const doctor_module_1 = require("./doctor/doctor.module");
+const treatment_module_1 = require("./treatment/treatment.module");
+const agenda_module_1 = require("./agenda/agenda.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -24,6 +27,9 @@ exports.AppModule = AppModule = __decorate([
             }),
             prisma_module_1.PrismaModule,
             clinic_module_1.ClinicModule,
+            doctor_module_1.DoctorModule,
+            treatment_module_1.TreatmentModule,
+            agenda_module_1.AgendaModule,
         ],
         controllers: [],
         providers: [

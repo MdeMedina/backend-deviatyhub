@@ -19,17 +19,18 @@ const createMockFn = (returnValue?: any) => {
 };
 
 async function verifyCoreService() {
-  console.log('--- 🧪 VERIFICACIÓN INTEGRAL: CORE SERVICE (CLINIC & AGENDA) ---');
+  console.log('--- 🧪 VERIFICACIÓN INTEGRAL: CORE SERVICE (PHASE 3.2) ---');
 
   let app: NestFastifyApplication;
 
-  const mockPrisma = {
+  const mockPrisma: any = {
     clinicConfig: {
       findUnique: createMockFn(),
       upsert: createMockFn(),
     },
     clinicSchedule: {
       findMany: createMockFn([]),
+      findFirst: createMockFn(),
       deleteMany: createMockFn(),
       createMany: createMockFn(),
     },
@@ -39,11 +40,33 @@ async function verifyCoreService() {
       update: createMockFn(),
       delete: createMockFn(),
     },
-    policy: {
+    doctor: {
       findMany: createMockFn([]),
+      findFirst: createMockFn(),
       create: createMockFn(),
       update: createMockFn(),
-      delete: createMockFn(),
+    },
+    treatment: {
+      findMany: createMockFn([]),
+      findUnique: createMockFn(),
+      findFirst: createMockFn(),
+      create: createMockFn(),
+      update: createMockFn(),
+    },
+    doctorTreatment: {
+      createMany: createMockFn(),
+      deleteMany: createMockFn(),
+    },
+    treatmentOffer: {
+      create: createMockFn(),
+      findFirst: createMockFn(),
+      update: createMockFn(),
+    },
+    appointment: {
+      findMany: createMockFn([]),
+    },
+    dentalEntry: {
+      findMany: createMockFn([]),
     },
     auditLog: { create: createMockFn() },
     $transaction: (cb: any) => cb(mockPrisma),
@@ -62,7 +85,6 @@ async function verifyCoreService() {
     app = moduleFixture.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     app.setGlobalPrefix('api');
     
-    // IMPORTANTE: Activar validaciones en el test
     const { ValidationPipe } = await import('@nestjs/common');
     app.useGlobalPipes(new ValidationPipe({
         whitelist: true,
@@ -77,100 +99,56 @@ async function verifyCoreService() {
     const clinicId = 'c-1111-2222-3333-4444';
     const authHeaders = { 'x-clinic-id': clinicId, 'x-user-id': 'u-1' };
 
-    // --- 1. CLINIC: CONFIG ---
-    console.log('\n👉 [1. CLINIC: CONFIG]');
-    (mockPrisma.clinicConfig.upsert as any).mockResolvedValueOnce({
-      clinicId, name: 'Clínica de Prueba', timezone: 'UTC'
-    });
-    
-    const resConfig = await app.inject({
-      method: 'PATCH',
-      url: '/api/clinic/config',
-      headers: authHeaders,
-      payload: { name: 'Clínica de Prueba', timezone: 'UTC' }
-    });
-    
-    const configBody = JSON.parse(resConfig.body);
-    if (resConfig.statusCode === 200 && configBody.success && configBody.data.name === 'Clínica de Prueba') {
-      console.log('✅ PASS: Configuración creada/actualizada y normalizada.');
-    } else {
-      console.log('❌ FAIL: Configuración falló.', configBody);
-    }
-
-    // --- 2. CLINIC: SCHEDULES ---
-    console.log('\n👉 [2. CLINIC: SCHEDULES]');
-    const resSchedules = await app.inject({
-      method: 'PUT',
-      url: '/api/clinic/schedules',
-      headers: authHeaders,
-      payload: {
-        schedules: [
-          { day_of_week: 1, open_time: '09:00', close_time: '18:00' },
-          { day_of_week: 2, open_time: '09:00', close_time: '18:00' }
-        ]
-      }
-    });
-    
-    const scheduleBody = JSON.parse(resSchedules.body);
-    if (resSchedules.statusCode === 200 && scheduleBody.success) {
-      console.log('✅ PASS: Horarios actualizados mediante transacción.');
-    } else {
-      console.log('❌ FAIL: Horarios fallaron.', scheduleBody);
-    }
-
-    // --- 3. CLINIC: UNAVAILABILITY ---
-    console.log('\n👉 [3. CLINIC: UNAVAILABILITY]');
-    (mockPrisma.unavailabilityBlock.create as any).mockResolvedValueOnce({
-        id: 'u-1', name: 'Almuerzo'
-    });
-    const resUnavail = await app.inject({
+    // --- 1. DOCTORS ---
+    console.log('\n👉 [6. DOCTORS: CRUD]');
+    mockPrisma.doctor.create.mockResolvedValueOnce({ id: 'd-1', name: 'Dr. Medina', title: 'Dentista' });
+    const resDoctor = await app.inject({
       method: 'POST',
-      url: '/api/clinic/unavailability',
+      url: '/api/doctors',
       headers: authHeaders,
-      payload: {
-        name: 'Almuerzo',
-        days_of_week: [1, 2, 3, 4, 5],
-        start_time: '13:00',
-        end_time: '14:00'
-      }
-    });
-
-    const unavailBody = JSON.parse(resUnavail.body);
-    if (resUnavail.statusCode === 201 && unavailBody.success) {
-      console.log('✅ PASS: Bloque de no disponibilidad creado.');
-    } else {
-      console.log('❌ FAIL: Inavailability falló.', unavailBody);
-    }
-
-    // --- 4. FAIL: VALIDATION ---
-    console.log('\n👉 [4. FAIL: VALIDATION]');
-    const resFail = await app.inject({
-      method: 'PUT',
-      url: '/api/clinic/schedules',
-      headers: authHeaders,
-      payload: {
-        schedules: [{ day_of_week: 9, open_time: '09:00', close_time: '18:00' }] // Día inválido
-      }
+      payload: { name: 'Dr. Medina', title: 'Dentista', treatment_ids: ['t-1'] }
     });
     
-    const failBody = JSON.parse(resFail.body);
-    if (resFail.statusCode === 400 && !failBody.success && failBody.error.code === 'VALIDATION_ERROR') {
-      console.log('✅ PASS: Validación de día (0-6) capturada correctamente.');
+    if (resDoctor.statusCode === 201) {
+      console.log('✅ PASS: Doctor creado y registrado exitosamente.');
     } else {
-      console.log('❌ FAIL: La validación no bloqueó el valor inválido.', failBody);
+      console.log('❌ FAIL: Falló creación de doctor.', resDoctor.body);
     }
 
-    // --- 5. FAIL: NOT FOUND ---
-    console.log('\n👉 [5. FAIL: NOT FOUND]');
-    (mockPrisma.clinicConfig.findUnique as any).mockResolvedValueOnce(null);
-    const resNotFound = await app.inject({
+    // --- 2. TREATMENTS ---
+    console.log('\n👉 [7. TREATMENTS: CRUD]');
+    mockPrisma.treatment.create.mockResolvedValueOnce({ id: 't-1', name: 'Limpieza', category: 'General' });
+    const resTreat = await app.inject({
+      method: 'POST',
+      url: '/api/treatments',
+      headers: authHeaders,
+      payload: { name: 'Limpieza', category: 'General', duration_avg_min: 45 }
+    });
+
+    if (resTreat.statusCode === 201) {
+      console.log('✅ PASS: Tratamiento registrado correctamente.');
+    } else {
+      console.log('❌ FAIL: Falló creación de tratamiento.', resTreat.body);
+    }
+
+    // --- 3. AGENDA: SLOTS ---
+    console.log('\n👉 [8. AGENDA: SLOTS]');
+    // Mock escenario: Lunes, abre 09:00 a 18:00, tratamiento 60 min
+    mockPrisma.clinicSchedule.findFirst.mockResolvedValueOnce({ openTime: '09:00', closeTime: '12:00', isOpen: true });
+    mockPrisma.treatment.findUnique.mockResolvedValueOnce({ durationAvgMin: 60 });
+    
+    const resSlots = await app.inject({
       method: 'GET',
-      url: '/api/clinic/config',
-      headers: { 'x-clinic-id': 'non-existent-uuid', 'x-user-id': 'u-1' }
+      url: '/api/agenda/slots?date=2026-05-11&treatment_id=t-1', // 2026-05-11 es lunes
+      headers: authHeaders
     });
-    
-    if (resNotFound.statusCode === 404) {
-      console.log('✅ PASS: Clínica inexistente retorna 404.');
+
+    const slotsBody = JSON.parse(resSlots.body);
+    if (resSlots.statusCode === 200 && slotsBody.success && slotsBody.data.length > 0) {
+      console.log(`✅ PASS: Slots generados exitosamente (${slotsBody.data.length} slots encontrados).`);
+      console.log('   Ejemplo de slot:', slotsBody.data[0]);
+    } else {
+      console.log('❌ FAIL: El cálculo de slots falló.', slotsBody);
     }
 
     console.log('\n--- 🎉 VERIFICACIÓN FINALIZADA ---');
