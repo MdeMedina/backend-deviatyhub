@@ -16,6 +16,8 @@ const clinic_module_1 = require("./clinic/clinic.module");
 const doctor_module_1 = require("./doctor/doctor.module");
 const treatment_module_1 = require("./treatment/treatment.module");
 const agenda_module_1 = require("./agenda/agenda.module");
+const conversation_module_1 = require("./conversation/conversation.module");
+const metrics_module_1 = require("./metrics/metrics.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -30,6 +32,8 @@ exports.AppModule = AppModule = __decorate([
             doctor_module_1.DoctorModule,
             treatment_module_1.TreatmentModule,
             agenda_module_1.AgendaModule,
+            conversation_module_1.ConversationModule,
+            metrics_module_1.MetricsModule,
         ],
         controllers: [],
         providers: [

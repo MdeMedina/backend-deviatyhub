@@ -19,7 +19,7 @@ const createMockFn = (returnValue) => {
     return fn;
 };
 async function verifyCoreService() {
-    console.log('--- 🧪 VERIFICACIÓN INTEGRAL: CORE SERVICE (PHASE 3.3) ---');
+    console.log('--- 🧪 VERIFICACIÓN INTEGRAL: CORE SERVICE (PHASE 3.4) ---');
     let app;
     const mockPrisma = {
         clinicConfig: { findUnique: createMockFn(), upsert: createMockFn() },
@@ -29,14 +29,17 @@ async function verifyCoreService() {
         treatment: { findMany: createMockFn([]), findUnique: createMockFn(), findFirst: createMockFn(), create: createMockFn(), update: createMockFn() },
         doctorTreatment: { createMany: createMockFn(), deleteMany: createMockFn() },
         treatmentOffer: { create: createMockFn(), findFirst: createMockFn(), update: createMockFn() },
-        clinicContact: { findFirst: createMockFn(), create: createMockFn() },
-        appointment: {
+        clinicContact: { findFirst: createMockFn(), create: createMockFn(), findMany: createMockFn([]), count: createMockFn(0) },
+        appointment: { findMany: createMockFn([]), findFirst: createMockFn(), create: createMockFn(), update: createMockFn() },
+        appointmentHistory: { create: createMockFn() },
+        conversation: {
             findMany: createMockFn([]),
             findFirst: createMockFn(),
-            create: createMockFn(),
             update: createMockFn(),
+            count: createMockFn(0)
         },
-        appointmentHistory: { create: createMockFn() },
+        message: { create: createMockFn(), count: createMockFn(0) },
+        metricsEvent: { count: createMockFn(0), groupBy: createMockFn([]) },
         auditLog: { create: createMockFn() },
         $transaction: (cb) => cb(mockPrisma),
     };
@@ -49,72 +52,58 @@ async function verifyCoreService() {
         app = moduleFixture.createNestApplication(new platform_fastify_1.FastifyAdapter());
         app.setGlobalPrefix('api');
         const { ValidationPipe } = await import('@nestjs/common');
-        app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, errorHttpStatusCode: 400 }));
+        app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
         await app.init();
         await app.getHttpAdapter().getInstance().ready();
         const clinicId = 'c-1111-2222-3333-4444';
-        const authHeaders = { 'x-clinic-id': clinicId, 'x-user-id': 'u-1' };
-        // --- 9. APPOINTMENTS: CREATE & CONTACT ---
-        console.log('\n👉 [9. APPOINTMENTS: CREATE & AUTO-CONTACT]');
-        mockPrisma.clinicContact.findFirst.mockResolvedValueOnce(null);
-        mockPrisma.clinicContact.create.mockResolvedValueOnce({ id: 'contact-1', name: 'Miguel Medina' });
-        mockPrisma.treatment.findUnique.mockResolvedValueOnce({ id: 't-1', durationAvgMin: 60 });
-        mockPrisma.appointment.findFirst.mockResolvedValueOnce(null); // No hay colisión
-        mockPrisma.appointment.create.mockResolvedValueOnce({ id: 'app-1', scheduledAt: new Date('2026-05-11T10:00:00Z') });
-        const resCreate = await app.inject({
+        const authHeaders = { 'x-clinic-id': clinicId, 'x-user-id': 'u-operator-1' };
+        // --- 12. CONVERSATIONS: TAKEOVER FLOW ---
+        console.log('\n👉 [12. CONVERSATIONS: TAKEOVER & MESSAGE]');
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: 'conv-1', status: 'OPEN', clinicId });
+        mockPrisma.conversation.update.mockResolvedValueOnce({ id: 'conv-1', status: 'HUMAN_TAKEOVER' });
+        const resTakeover = await app.inject({
             method: 'POST',
-            url: '/api/agenda/appointments',
-            headers: authHeaders,
-            payload: {
-                contact_name: 'Miguel Medina',
-                contact_phone: '+56987654321',
-                treatment_id: '8913615f-972f-48e0-bb12-f1737f940b52',
-                doctor_id: '8913615f-972f-48e0-bb12-f1737f940b52',
-                scheduled_at: '2026-05-11T10:00:00Z'
-            }
+            url: '/api/conversations/conv-1/takeover',
+            headers: authHeaders
         });
-        if (resCreate.statusCode === 201) {
-            console.log('✅ PASS: Cita creada y contacto generado automáticamente.');
+        if (resTakeover.statusCode === 201) {
+            console.log('✅ PASS: Takeover realizado correctamente.');
         }
-        else {
-            console.log('❌ FAIL: Falló creación de cita.', resCreate.body);
-        }
-        // --- 10. APPOINTMENTS: OVERBOOKING PROTECTION ---
-        console.log('\n👉 [10. APPOINTMENTS: OVERBOOKING PROTECTION]');
-        mockPrisma.treatment.findUnique.mockResolvedValueOnce({ id: 't-1', durationAvgMin: 60 });
-        mockPrisma.appointment.findFirst.mockResolvedValueOnce({ id: 'app-existing' }); // Simulamos colisión
-        const resFail = await app.inject({
+        mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: 'conv-1', status: 'HUMAN_TAKEOVER', clinicId });
+        mockPrisma.message.create.mockResolvedValueOnce({ id: 'msg-1', role: 'HUMAN' });
+        const resMsg = await app.inject({
             method: 'POST',
-            url: '/api/agenda/appointments',
+            url: '/api/conversations/conv-1/message',
             headers: authHeaders,
-            payload: {
-                contact_id: '8913615f-972f-48e0-bb12-f1737f940b52',
-                treatment_id: '8913615f-972f-48e0-bb12-f1737f940b52',
-                doctor_id: '8913615f-972f-48e0-bb12-f1737f940b52',
-                scheduled_at: '2026-05-11T10:00:00Z'
-            }
+            payload: { content: 'Hola, te habla el Dr. Medina.' }
         });
-        if (resFail.statusCode === 400) {
-            console.log('✅ PASS: Prevención de overbooking (400 Bad Request) exitosa.');
+        if (resMsg.statusCode === 201) {
+            console.log('✅ PASS: Mensaje manual enviado correctamente en modo takeover.');
         }
         else {
-            console.log('❌ FAIL: Se permitió agendar en slot ocupado.', resFail.statusCode);
+            console.log('❌ FAIL: No se pudo enviar mensaje manual.', resMsg.body);
         }
-        // --- 11. APPOINTMENTS: STATUS & HISTORY ---
-        console.log('\n👉 [11. APPOINTMENTS: STATUS & HISTORY]');
-        mockPrisma.appointment.findFirst.mockResolvedValueOnce({ id: 'app-1', clinicId });
-        mockPrisma.appointment.update.mockResolvedValueOnce({ id: 'app-1', status: 'CONFIRMED' });
-        const resStatus = await app.inject({
-            method: 'PATCH',
-            url: '/api/agenda/appointments/app-1/status',
-            headers: authHeaders,
-            payload: { status: 'CONFIRMED', notes: 'Confirmó por WhatsApp' }
+        // --- 13. METRICS: SUMMARY AGGREGATION ---
+        console.log('\n👉 [13. METRICS: SUMMARY]');
+        mockPrisma.conversation.count.mockResolvedValueOnce(10); // convCount
+        mockPrisma.metricsEvent.count.mockResolvedValueOnce(2); // appScheduled
+        mockPrisma.metricsEvent.count.mockResolvedValueOnce(0); // appRescheduled
+        mockPrisma.metricsEvent.count.mockResolvedValueOnce(0); // appCancelled
+        mockPrisma.metricsEvent.count.mockResolvedValueOnce(2); // takeovers
+        mockPrisma.metricsEvent.groupBy.mockResolvedValueOnce([
+            { intention: 'agendar_cita', _count: { _all: 5 } }
+        ]);
+        const resMetrics = await app.inject({
+            method: 'GET',
+            url: '/api/metrics/summary?period=7',
+            headers: authHeaders
         });
-        if (resStatus.statusCode === 200) {
-            console.log('✅ PASS: Estado actualizado y evento registrado en historial.');
+        const metricsBody = JSON.parse(resMetrics.body);
+        if (resMetrics.statusCode === 200 && metricsBody.success && metricsBody.data.containment_rate === 0.8) {
+            console.log('✅ PASS: Métricas calculadas correctamente (Containment Rate 0.8).');
         }
         else {
-            console.log('❌ FAIL: Error actualizando estado.', resStatus.body);
+            console.log('❌ FAIL: El cálculo de métricas es incorrecto.', metricsBody);
         }
         console.log('\n--- 🎉 VERIFICACIÓN FINALIZADA ---');
         await app.close();

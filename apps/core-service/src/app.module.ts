@@ -11,6 +11,8 @@ import { ClinicModule } from './clinic/clinic.module';
 import { DoctorModule } from './doctor/doctor.module';
 import { TreatmentModule } from './treatment/treatment.module';
 import { AgendaModule } from './agenda/agenda.module';
+import { ConversationModule } from './conversation/conversation.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { AgendaModule } from './agenda/agenda.module';
     DoctorModule,
     TreatmentModule,
     AgendaModule,
+    ConversationModule,
+    MetricsModule,
   ],
   controllers: [],
   providers: [
