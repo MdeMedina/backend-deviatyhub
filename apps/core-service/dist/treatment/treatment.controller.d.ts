@@ -4,12 +4,12 @@ export declare class TreatmentController {
     private readonly treatmentService;
     constructor(treatmentService: TreatmentService);
     getEncyclopedia(category?: string, search?: string): Promise<{
-        id: string;
         name: string;
+        id: string;
         updatedAt: Date | null;
+        description: string;
         category: string;
         durationAvgMin: number | null;
-        description: string;
         procedure: string;
         indications: string[];
         contraindications: string[];
@@ -19,13 +19,13 @@ export declare class TreatmentController {
     findAll(clinicId: string, active?: string): Promise<({
         doctors: ({
             doctor: {
+                name: string;
                 id: string;
                 clinicId: string;
-                name: string;
-                title: string;
+                updatedAt: Date | null;
                 active: boolean | null;
                 createdAt: Date | null;
-                updatedAt: Date | null;
+                title: string;
             };
         } & {
             id: string;
@@ -44,12 +44,12 @@ export declare class TreatmentController {
             validUntil: Date | null;
         }[];
     } & {
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
         category: string;
         durationAvgMin: number | null;
         encyclopediaRef: string | null;
@@ -57,13 +57,13 @@ export declare class TreatmentController {
     findOne(clinicId: string, id: string): Promise<{
         doctors: ({
             doctor: {
+                name: string;
                 id: string;
                 clinicId: string;
-                name: string;
-                title: string;
+                updatedAt: Date | null;
                 active: boolean | null;
                 createdAt: Date | null;
-                updatedAt: Date | null;
+                title: string;
             };
         } & {
             id: string;
@@ -82,45 +82,45 @@ export declare class TreatmentController {
             validUntil: Date | null;
         }[];
     } & {
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
         category: string;
         durationAvgMin: number | null;
         encyclopediaRef: string | null;
     }>;
     create(clinicId: string, dto: CreateTreatmentDto): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
         category: string;
         durationAvgMin: number | null;
         encyclopediaRef: string | null;
     }>;
     update(clinicId: string, id: string, dto: UpdateTreatmentDto): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
         category: string;
         durationAvgMin: number | null;
         encyclopediaRef: string | null;
     }>;
     remove(clinicId: string, id: string): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
         category: string;
         durationAvgMin: number | null;
         encyclopediaRef: string | null;

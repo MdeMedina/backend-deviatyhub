@@ -33,3 +33,12 @@ export interface IMetricEventPayload {
   conversationId?: string;
   value?: any;
 }
+
+export interface IMessageOutboundEvent {
+  conversationId: string;
+  clinicId: string;
+  recipient: string; // E.164 phone number
+  content: string;
+  channel: Channel;
+  metadata?: any;
+}

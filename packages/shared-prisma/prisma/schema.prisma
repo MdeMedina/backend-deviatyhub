@@ -421,6 +421,7 @@ model Conversation {
   appointments Appointment[]
   patientSessions PatientSession[]
   metricsEvents   MetricsEvent[]
+  metadata        Json?          @default("{}")
 
   @@map("conversations")
 }

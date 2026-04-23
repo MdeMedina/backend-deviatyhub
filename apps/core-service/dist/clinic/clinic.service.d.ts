@@ -4,9 +4,9 @@ export declare class ClinicService {
     private readonly prisma;
     constructor(prisma: PrismaService);
     getConfig(clinicId: string): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
         address: string;
         phone: string;
         email: string;
@@ -15,9 +15,9 @@ export declare class ClinicService {
         updatedAt: Date | null;
     }>;
     updateConfig(clinicId: string, dto: UpdateClinicConfigDto): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
         address: string;
         phone: string;
         email: string;
@@ -37,9 +37,9 @@ export declare class ClinicService {
         message: string;
     }>;
     getUnavailability(clinicId: string): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
         updatedAt: Date | null;
         daysOfWeek: number[];
         startTime: string;
@@ -48,9 +48,9 @@ export declare class ClinicService {
         createdAt: Date | null;
     }[]>;
     createUnavailability(clinicId: string, dto: CreateUnavailabilityDto): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
         updatedAt: Date | null;
         daysOfWeek: number[];
         startTime: string;
@@ -59,9 +59,9 @@ export declare class ClinicService {
         createdAt: Date | null;
     }>;
     updateUnavailability(clinicId: string, id: string, dto: UpdateUnavailabilityDto): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
         updatedAt: Date | null;
         daysOfWeek: number[];
         startTime: string;

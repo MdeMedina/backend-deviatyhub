@@ -6,12 +6,12 @@ export declare class DoctorController {
     findAll(clinicId: string, active?: string): Promise<({
         treatments: ({
             treatment: {
+                name: string;
                 id: string;
                 clinicId: string;
-                name: string;
+                updatedAt: Date | null;
                 active: boolean | null;
                 createdAt: Date | null;
-                updatedAt: Date | null;
                 category: string;
                 durationAvgMin: number | null;
                 encyclopediaRef: string | null;
@@ -23,23 +23,23 @@ export declare class DoctorController {
             treatmentId: string;
         })[];
     } & {
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
-        title: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
+        title: string;
     })[]>;
     findOne(clinicId: string, id: string): Promise<{
         treatments: ({
             treatment: {
+                name: string;
                 id: string;
                 clinicId: string;
-                name: string;
+                updatedAt: Date | null;
                 active: boolean | null;
                 createdAt: Date | null;
-                updatedAt: Date | null;
                 category: string;
                 durationAvgMin: number | null;
                 encyclopediaRef: string | null;
@@ -51,40 +51,40 @@ export declare class DoctorController {
             treatmentId: string;
         })[];
     } & {
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
-        title: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
+        title: string;
     }>;
     create(clinicId: string, dto: CreateDoctorDto): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
-        title: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
+        title: string;
     }>;
     update(clinicId: string, id: string, dto: UpdateDoctorDto): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
-        title: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
+        title: string;
     }>;
     remove(clinicId: string, id: string): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
-        title: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
+        title: string;
     }>;
 }
 //# sourceMappingURL=doctor.controller.d.ts.map

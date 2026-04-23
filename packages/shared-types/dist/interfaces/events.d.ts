@@ -29,4 +29,12 @@ export interface IMetricEventPayload {
     conversationId?: string;
     value?: any;
 }
+export interface IMessageOutboundEvent {
+    conversationId: string;
+    clinicId: string;
+    recipient: string;
+    content: string;
+    channel: Channel;
+    metadata?: any;
+}
 //# sourceMappingURL=events.d.ts.map

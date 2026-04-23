@@ -32,12 +32,34 @@ let ProxyModule = class ProxyModule {
         await fastify.register(reply_from_1.default);
         // Registrar reglas de ruteo
         for (const rule of proxy_config_1.PROXY_CONFIG) {
-            fastify.all(`${rule.prefix}`, (req, reply) => {
-                return reply.from(`${rule.target}${req.url.replace(rule.prefix, '')}`);
-            });
-            fastify.all(`${rule.prefix}/*`, (req, reply) => {
-                return reply.from(`${rule.target}${req.url.replace(rule.prefix, '')}`);
-            });
+            const handler = (req, reply) => {
+                const targetUrl = `${rule.target}${req.url.replace(rule.prefix, '')}`;
+                return reply.from(targetUrl, {
+                    onResponse: (request, reply, res) => {
+                        // Manejar errores de conexión (ej: microservicio caído)
+                        if (res.statusCode >= 500) {
+                            // Dejar pasar si el microservicio respondió con 50x
+                            reply.send(res);
+                        }
+                        else {
+                            reply.send(res);
+                        }
+                    },
+                    onError: (reply, error) => {
+                        console.error(`[Proxy Error] ${rule.prefix} -> ${rule.target}: ${error.message}`);
+                        // Retornar 502 Bad Gateway si el servicio no responde
+                        reply.status(502).send({
+                            success: false,
+                            error: {
+                                code: 'BAD_GATEWAY',
+                                message: 'El servicio de destino no está disponible temporalmente.',
+                            },
+                        });
+                    }
+                });
+            };
+            fastify.all(`${rule.prefix}`, handler);
+            fastify.all(`${rule.prefix}/*`, handler);
             console.log(`🔗 Proxy mapped: ${rule.prefix} -> ${rule.target}`);
         }
     }

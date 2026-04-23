@@ -14,7 +14,7 @@ const auth_module_1 = require("./auth/auth.module");
 const roles_module_1 = require("./roles/roles.module");
 const users_module_1 = require("./users/users.module");
 const events_module_1 = require("./events/events.module");
-const shared_nestjs_1 = require("../../../packages/shared-nestjs/dist");
+const shared_nestjs_1 = require("@deviaty/shared-nestjs");
 const core_1 = require("@nestjs/core");
 let AppModule = class AppModule {
 };
@@ -33,6 +33,7 @@ exports.AppModule = AppModule = __decorate([
         ],
         controllers: [],
         providers: [
+            core_1.Reflector,
             {
                 provide: core_1.APP_INTERCEPTOR,
                 useClass: shared_nestjs_1.AuditInterceptor,

@@ -1,13 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 require("reflect-metadata");
-const testing_1 = require("@nestjs/testing");
-const app_module_1 = require("./app.module");
-const shared_prisma_1 = require("@deviaty/shared-prisma");
-const mailer_1 = require("@nestjs-modules/mailer");
 const shared_events_1 = require("@deviaty/shared-events");
-const config_1 = require("@nestjs/config");
-const platform_fastify_1 = require("@nestjs/platform-fastify");
+const email_service_1 = require("./email/email.service");
+const notification_listener_1 = require("./listeners/notification.listener");
 const createMockFn = (returnValue) => {
     const fn = (...args) => {
         fn.mock.calls.push(args);
@@ -17,12 +13,14 @@ const createMockFn = (returnValue) => {
     return fn;
 };
 async function verifyNotificationService() {
-    console.log('--- 🧪 VERIFICACIÓN: NOTIFICATION SERVICE (PHASE 4) ---');
+    console.log('--- 🧪 VERIFICACIÓN DIRECTA: NOTIFICATION SERVICE (PHASE 4) ---');
     const mockMailer = {
         sendMail: createMockFn({ messageId: '123' }),
     };
     const mockPrisma = {
-        clinic: { findUnique: createMockFn({ id: 'c-1', name: 'Dental Care Plus', address: 'Av. Providencia 1234' }) },
+        clinic: {
+            findUnique: createMockFn({ id: 'c-1', name: 'Dental Care Plus', address: 'Av. Providencia 1234' })
+        },
         appointment: {
             findUnique: createMockFn({
                 id: 'app-1',
@@ -43,7 +41,6 @@ async function verifyNotificationService() {
             return defaultValue;
         }
     };
-    // Mock EventBus para interceptar handlers
     const handlers = {};
     const mockEventBus = {
         subscribe: (channel, handler) => {
@@ -52,16 +49,10 @@ async function verifyNotificationService() {
         publish: createMockFn(),
     };
     try {
-        const moduleFixture = await testing_1.Test.createTestingModule({
-            imports: [app_module_1.AppModule],
-        })
-            .overrideProvider(mailer_1.MailerService).useValue(mockMailer)
-            .overrideProvider(shared_prisma_1.PrismaService).useValue(mockPrisma)
-            .overrideProvider(shared_events_1.EventBus).useValue(mockEventBus)
-            .overrideProvider(config_1.ConfigService).useValue(mockConfig)
-            .compile();
-        const app = moduleFixture.createNestApplication(new platform_fastify_1.FastifyAdapter());
-        await app.init();
+        const emailService = new email_service_1.EmailService(mockMailer);
+        const listener = new notification_listener_1.NotificationListener(mockEventBus, mockPrisma, mockConfig, emailService);
+        // Inicializar listener (registro de suscripciones)
+        await listener.onModuleInit();
         // --- 1. TEST: USER INVITATION ---
         console.log('\n👉 [1. EVENT: USER_INVITED]');
         const invitePayload = {
@@ -81,6 +72,9 @@ async function verifyNotificationService() {
                 console.log('❌ FAIL: Parámetros de invitación incorrectos.');
             }
         }
+        else {
+            console.log('❌ FAIL: Handler USER_INVITED no registrado.');
+        }
         // --- 2. TEST: APPOINTMENT CONFIRMATION ---
         console.log('\n👉 [2. EVENT: APPOINTMENT_SCHEDULED]');
         const appointmentPayload = {
@@ -98,11 +92,15 @@ async function verifyNotificationService() {
                 console.log('❌ FAIL: Parámetros de cita incorrectos.');
             }
         }
+        else {
+            console.log('❌ FAIL: Handler APPOINTMENT_SCHEDULED no registrado.');
+        }
         console.log('\n--- 🎉 VERIFICACIÓN FINALIZADA ---');
         process.exit(0);
     }
     catch (error) {
         console.error('❌ ERROR FATAL en verificación:', error.message);
+        console.error(error.stack);
         process.exit(1);
     }
 }

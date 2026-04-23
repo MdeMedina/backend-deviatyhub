@@ -11,6 +11,9 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push"
   },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
     "@prisma/client": "^6.19.3"

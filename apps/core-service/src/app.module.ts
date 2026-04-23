@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import {
   ApiResponseInterceptor,
   HttpExceptionFilter,
@@ -29,6 +29,7 @@ import { MetricsModule } from './metrics/metrics.module';
   ],
   controllers: [],
   providers: [
+    Reflector,
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditInterceptor,
