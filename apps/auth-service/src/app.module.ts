@@ -10,7 +10,7 @@ import {
   AuditInterceptor,
   HttpExceptionFilter,
 } from '@deviaty/shared-nestjs';
-import { APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_FILTER, Reflector } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -25,6 +25,7 @@ import { APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
   ],
   controllers: [],
   providers: [
+    Reflector,
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditInterceptor,

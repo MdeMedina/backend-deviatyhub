@@ -18,4 +18,5 @@ __exportStar(require("./enums"), exports);
 __exportStar(require("./interfaces/domain"), exports);
 __exportStar(require("./interfaces/api"), exports);
 __exportStar(require("./interfaces/events"), exports);
+__exportStar(require("./events"), exports);
 //# sourceMappingURL=index.js.map

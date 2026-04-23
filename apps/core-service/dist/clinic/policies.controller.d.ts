@@ -6,27 +6,27 @@ export declare class PoliciesController {
     findAll(clinicId: string): Promise<{
         id: string;
         clinicId: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
         title: string;
         description: string;
     }[]>;
     create(clinicId: string, dto: CreatePolicyDto): Promise<{
         id: string;
         clinicId: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
         title: string;
         description: string;
     }>;
     update(clinicId: string, id: string, dto: UpdatePolicyDto): Promise<{
         id: string;
         clinicId: string;
+        updatedAt: Date | null;
         active: boolean | null;
         createdAt: Date | null;
-        updatedAt: Date | null;
         title: string;
         description: string;
     }>;

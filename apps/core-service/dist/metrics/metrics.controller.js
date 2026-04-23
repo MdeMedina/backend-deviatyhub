@@ -14,7 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MetricsController = void 0;
 const common_1 = require("@nestjs/common");
-const shared_nestjs_1 = require("../../../../packages/shared-nestjs/dist");
+const shared_nestjs_1 = require("@deviaty/shared-nestjs");
 const metrics_service_1 = require("./metrics.service");
 let MetricsController = class MetricsController {
     metricsService;

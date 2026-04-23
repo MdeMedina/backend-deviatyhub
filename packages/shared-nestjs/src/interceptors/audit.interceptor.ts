@@ -20,9 +20,7 @@ export class AuditInterceptor implements NestInterceptor {
   ];
 
   constructor(
-    @Inject(Reflector)
     private readonly reflector: Reflector,
-    @Inject(PrismaService)
     private readonly prisma: PrismaService,
   ) {}
 

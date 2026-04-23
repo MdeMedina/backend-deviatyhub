@@ -10,7 +10,7 @@
     "verify": "tsx src/verify.ts"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^20.0.0",
     "typescript": "latest"
   }
 }

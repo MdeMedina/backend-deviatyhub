@@ -10,10 +10,10 @@ export declare class AuthService {
     private readonly refreshSecret;
     constructor(prisma: PrismaService, config: ConfigService, eventBus: EventBus);
     register(dto: RegisterDto): Promise<{
-        id: string;
         email: string;
-        createdAt: Date | null;
+        id: string;
         clinicId: string;
+        createdAt: Date | null;
     }>;
     login(dto: LoginDto): Promise<{
         access_token: string;

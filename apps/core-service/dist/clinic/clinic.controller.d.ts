@@ -4,9 +4,9 @@ export declare class ClinicController {
     private readonly clinicService;
     constructor(clinicService: ClinicService);
     getConfig(clinicId: string): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
         address: string;
         phone: string;
         email: string;
@@ -15,9 +15,9 @@ export declare class ClinicController {
         updatedAt: Date | null;
     }>;
     updateConfig(clinicId: string, dto: UpdateClinicConfigDto): Promise<{
+        name: string;
         id: string;
         clinicId: string;
-        name: string;
         address: string;
         phone: string;
         email: string;

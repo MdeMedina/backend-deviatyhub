@@ -1,0 +1,25 @@
+{
+  "name": "@deviaty/whatsapp-service",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "verify": "tsx src/verify.ts"
+  },
+  "dependencies": {
+    "@deviaty/shared-utils": "^1.0.0",
+    "bullmq": "^5.7.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.26.2",
+    "fastify-raw-body": "^4.0.0",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "axios": "^1.6.7",
+    "tsx": "^4.7.1",
+    "typescript": "^6.0.2"
+  }
+}

@@ -5,32 +5,32 @@ export declare class RolesService {
     constructor(prisma: PrismaService);
     createRole(clinicId: string, dto: CreateRoleDto, creatorIsSuperadmin: boolean): Promise<{
         id: string;
-        createdAt: Date | null;
         clinicId: string;
+        createdAt: Date | null;
         name: string;
         isSuperadmin: boolean | null;
         permissions: import("@prisma/client/runtime/library").JsonValue;
     }>;
     findRolesByClinic(clinicId: string): Promise<{
         id: string;
-        createdAt: Date | null;
         clinicId: string;
+        createdAt: Date | null;
         name: string;
         isSuperadmin: boolean | null;
         permissions: import("@prisma/client/runtime/library").JsonValue;
     }[]>;
     updatePermissions(roleId: string, clinicId: string, dto: UpdatePermissionsDto): Promise<{
         id: string;
-        createdAt: Date | null;
         clinicId: string;
+        createdAt: Date | null;
         name: string;
         isSuperadmin: boolean | null;
         permissions: import("@prisma/client/runtime/library").JsonValue;
     }>;
     deleteRole(roleId: string, clinicId: string): Promise<{
         id: string;
-        createdAt: Date | null;
         clinicId: string;
+        createdAt: Date | null;
         name: string;
         isSuperadmin: boolean | null;
         permissions: import("@prisma/client/runtime/library").JsonValue;

@@ -10,7 +10,7 @@ exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const core_1 = require("@nestjs/core");
-const shared_nestjs_1 = require("../../../packages/shared-nestjs/dist");
+const shared_nestjs_1 = require("@deviaty/shared-nestjs");
 const prisma_module_1 = require("./prisma/prisma.module");
 const clinic_module_1 = require("./clinic/clinic.module");
 const doctor_module_1 = require("./doctor/doctor.module");
@@ -37,6 +37,7 @@ exports.AppModule = AppModule = __decorate([
         ],
         controllers: [],
         providers: [
+            core_1.Reflector,
             {
                 provide: core_1.APP_INTERCEPTOR,
                 useClass: shared_nestjs_1.AuditInterceptor,
