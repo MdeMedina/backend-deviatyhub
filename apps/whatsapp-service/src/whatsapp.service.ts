@@ -1,22 +1,23 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EventBus } from '@deviaty/shared-events';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '@deviaty/shared-prisma';
+import { EVENT_BUS_TOKEN } from '@deviaty/shared-events';
 import axios from 'axios';
 
 @Injectable()
-export class WhatsAppSenderService {
+export class WhatsAppSenderService implements OnModuleInit {
   private readonly logger = new Logger('WhatsAppSenderService');
+  private eventBus: any;
 
   constructor(
-    private readonly eventBus: EventBus,
+    private readonly moduleRef: ModuleRef,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
-  ) {
-    this.setupSubscription();
-  }
+  ) {}
 
-  private async setupSubscription() {
+  async onModuleInit() {
+    this.eventBus = this.moduleRef.get(EVENT_BUS_TOKEN, { strict: false });
     this.logger.log('🚀 WhatsApp Sender Service inicializado. Escuchando outbound...');
     await this.eventBus.subscribe('message.outbound', async (payload: any) => {
       await this.sendToMeta(payload);
