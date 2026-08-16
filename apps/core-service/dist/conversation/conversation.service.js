@@ -15,10 +15,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConversationService = void 0;
 const common_1 = require("@nestjs/common");
 const shared_prisma_1 = require("@deviaty/shared-prisma");
+const conversation_gateway_1 = require("./conversation.gateway");
 let ConversationService = class ConversationService {
     prisma;
-    constructor(prisma) {
+    gateway;
+    constructor(prisma, gateway) {
         this.prisma = prisma;
+        this.gateway = gateway;
     }
     async findAll(clinicId, filters) {
         const { status, channel, page = 1, limit = 20 } = filters;
@@ -26,7 +29,7 @@ let ConversationService = class ConversationService {
         const where = {
             clinicId,
             ...(status ? { status: status } : {}),
-            ...(channel ? { channel } : {}),
+            ...(channel ? { channel } : { channel: { not: 'SIMULATOR' } }),
         };
         const [data, total] = await Promise.all([
             this.prisma.conversation.findMany({
@@ -76,30 +79,40 @@ let ConversationService = class ConversationService {
         if (conversation.status === 'HUMAN_TAKEOVER') {
             return conversation; // Ya está en takeover
         }
-        return this.prisma.conversation.update({
+        const updated = await this.prisma.conversation.update({
             where: { id },
             data: {
                 status: 'HUMAN_TAKEOVER',
                 assignedUserId: userId,
             },
         });
+        this.gateway.emitEvent('conversation.status_changed', {
+            conversation_id: id,
+            status: 'HUMAN_TAKEOVER',
+        });
+        return updated;
     }
     async release(clinicId, id) {
         await this.findOne(clinicId, id);
-        return this.prisma.conversation.update({
+        const updated = await this.prisma.conversation.update({
             where: { id },
             data: {
                 status: 'OPEN',
                 assignedUserId: null,
             },
         });
+        this.gateway.emitEvent('conversation.status_changed', {
+            conversation_id: id,
+            status: 'OPEN',
+        });
+        return updated;
     }
     async sendManualMessage(clinicId, id, userId, content) {
         const conversation = await this.findOne(clinicId, id);
         if (conversation.status !== 'HUMAN_TAKEOVER') {
             throw new common_1.ForbiddenException('NOT_IN_TAKEOVER: La conversación debe estar en modo intervención humana');
         }
-        return this.prisma.message.create({
+        const message = await this.prisma.message.create({
             data: {
                 clinicId,
                 conversationId: id,
@@ -107,6 +120,11 @@ let ConversationService = class ConversationService {
                 content,
             },
         });
+        this.gateway.emitEvent('conversation.message', {
+            conversation_id: id,
+            message,
+        });
+        return message;
     }
     async findContacts(clinicId, search, page = 1, limit = 20) {
         const skip = (page - 1) * limit;
@@ -143,6 +161,8 @@ exports.ConversationService = ConversationService;
 exports.ConversationService = ConversationService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, common_1.Inject)(shared_prisma_1.PrismaService)),
-    __metadata("design:paramtypes", [shared_prisma_1.PrismaService])
+    __param(1, (0, common_1.Inject)(conversation_gateway_1.ConversationGateway)),
+    __metadata("design:paramtypes", [shared_prisma_1.PrismaService,
+        conversation_gateway_1.ConversationGateway])
 ], ConversationService);
 //# sourceMappingURL=conversation.service.js.map

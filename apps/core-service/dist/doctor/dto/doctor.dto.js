@@ -15,6 +15,7 @@ class CreateDoctorDto {
     name;
     title;
     treatment_ids;
+    treatments;
 }
 exports.CreateDoctorDto = CreateDoctorDto;
 __decorate([
@@ -33,10 +34,16 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Array)
 ], CreateDoctorDto.prototype, "treatment_ids", void 0);
+__decorate([
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Array)
+], CreateDoctorDto.prototype, "treatments", void 0);
 class UpdateDoctorDto {
     name;
     title;
     treatment_ids;
+    treatments;
     active;
 }
 exports.UpdateDoctorDto = UpdateDoctorDto;
@@ -56,6 +63,11 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Array)
 ], UpdateDoctorDto.prototype, "treatment_ids", void 0);
+__decorate([
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Array)
+], UpdateDoctorDto.prototype, "treatments", void 0);
 __decorate([
     (0, class_validator_1.IsBoolean)(),
     (0, class_validator_1.IsOptional)(),

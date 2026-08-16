@@ -25,8 +25,8 @@ let AgendaController = class AgendaController {
     async getSlots(clinicId, date, treatmentId, doctorId) {
         return this.agendaService.getAvailableSlots(clinicId, date, treatmentId, doctorId);
     }
-    async findAll(clinicId, from, to, doctorId) {
-        return this.agendaService.findAllAppointments(clinicId, from, to, doctorId);
+    async findAll(clinicId, startDate, endDate, doctorId) {
+        return this.agendaService.findAllAppointments(clinicId, startDate, endDate, doctorId);
     }
     async findOne(clinicId, id) {
         return this.agendaService.findOneAppointment(clinicId, id);
@@ -55,8 +55,8 @@ __decorate([
 __decorate([
     (0, common_1.Get)('appointments'),
     __param(0, (0, shared_nestjs_1.CurrentClinicId)()),
-    __param(1, (0, common_1.Query)('from')),
-    __param(2, (0, common_1.Query)('to')),
+    __param(1, (0, common_1.Query)('startDate')),
+    __param(2, (0, common_1.Query)('endDate')),
     __param(3, (0, common_1.Query)('doctor_id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String, String, String]),

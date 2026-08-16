@@ -7,10 +7,10 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
+  const app = await (NestFactory.create as any)(
     AppModule,
     new FastifyAdapter()
-  );
+  ) as NestFastifyApplication;
 
   app.setGlobalPrefix('api');
   

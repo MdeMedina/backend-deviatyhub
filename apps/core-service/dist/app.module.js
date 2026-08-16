@@ -40,10 +40,6 @@ exports.AppModule = AppModule = __decorate([
             core_1.Reflector,
             {
                 provide: core_1.APP_INTERCEPTOR,
-                useClass: shared_nestjs_1.AuditInterceptor,
-            },
-            {
-                provide: core_1.APP_INTERCEPTOR,
                 useClass: shared_nestjs_1.ApiResponseInterceptor,
             },
             {

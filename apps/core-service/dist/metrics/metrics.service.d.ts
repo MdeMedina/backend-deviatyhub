@@ -1,4 +1,4 @@
-import { PrismaService } from '@deviaty/shared-prisma';
+import { PrismaService } from "@deviaty/shared-prisma";
 export declare class MetricsService {
     private readonly prisma;
     constructor(prisma: PrismaService);

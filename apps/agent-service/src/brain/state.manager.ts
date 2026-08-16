@@ -21,37 +21,48 @@ export class StateManager {
     conversationId: string,
     currentStep: ConversationStep,
     intent: Intent,
-    confidence: number
+    confidence: number,
+    bookingState?: any
   ): Promise<ConversationStep> {
     
-    // Lógica de 2 intentos para baja confianza (se gestionará en BrainService con contador)
+    // Lógica de 2 intentos para baja confianza
     if (confidence < 0.8) {
       return currentStep; // Mantener estado para re-intento
     }
 
     let nextStep: ConversationStep = currentStep;
+    const booking = bookingState || {};
 
-    // Máquina de estados simplificada para agendamiento
+    // Máquina de estados con guardas de validación basadas en datos reales
     switch (currentStep) {
       case 'inicio':
-        if (intent === Intent.AGENDAR_CITA) nextStep = 'esperando_tratamiento';
+        if (intent === Intent.AGENDAR_CITA) {
+          nextStep = booking.procedimiento_id ? 'esperando_fecha' : 'esperando_tratamiento';
+        }
         break;
       
       case 'esperando_tratamiento':
-        // El LLM valida el tratamiento, aquí solo avanzamos si el flujo prosigue
-        nextStep = 'esperando_fecha';
+        if (booking.procedimiento_id) {
+          nextStep = booking.fecha ? 'esperando_horario' : 'esperando_fecha';
+        }
         break;
 
       case 'esperando_fecha':
-        nextStep = 'esperando_horario';
+        if (booking.fecha) {
+          nextStep = booking.hora ? 'esperando_datos_personales' : 'esperando_horario';
+        }
         break;
 
       case 'esperando_horario':
-        nextStep = 'esperando_datos_personales';
+        if (booking.hora) {
+          nextStep = (booking.Nombre && booking.Apellido && booking.correo) ? 'listo_para_ejecucion' : 'esperando_datos_personales';
+        }
         break;
 
       case 'esperando_datos_personales':
-        nextStep = 'listo_para_ejecucion';
+        if (booking.Nombre && booking.Apellido && booking.correo) {
+          nextStep = 'listo_para_ejecucion';
+        }
         break;
     }
 

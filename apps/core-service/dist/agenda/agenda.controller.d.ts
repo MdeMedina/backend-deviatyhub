@@ -7,20 +7,20 @@ export declare class AgendaController {
         time: string;
         available: boolean;
     }[]>;
-    findAll(clinicId: string, from: string, to: string, doctorId?: string): Promise<({
+    findAll(clinicId: string, startDate: string, endDate: string, doctorId?: string): Promise<({
         doctor: {
-            name: string;
             id: string;
             clinicId: string;
+            name: string;
             updatedAt: Date | null;
             active: boolean | null;
             createdAt: Date | null;
             title: string;
         } | null;
         treatment: {
-            name: string;
             id: string;
             clinicId: string;
+            name: string;
             updatedAt: Date | null;
             active: boolean | null;
             createdAt: Date | null;
@@ -29,9 +29,9 @@ export declare class AgendaController {
             encyclopediaRef: string | null;
         } | null;
         contact: {
-            name: string | null;
             id: string;
             clinicId: string;
+            name: string | null;
             phone: string | null;
             email: string | null;
             updatedAt: Date | null;
@@ -40,18 +40,18 @@ export declare class AgendaController {
             lastInteractionAt: Date | null;
         } | null;
     } & {
-        status: import("@prisma/client").$Enums.AppointmentStatus;
         id: string;
         clinicId: string;
         updatedAt: Date | null;
         createdAt: Date | null;
-        doctorId: string | null;
         treatmentId: string | null;
-        conversationId: string | null;
         contactId: string | null;
+        doctorId: string | null;
+        conversationId: string | null;
         contactName: string | null;
         scheduledAt: Date;
         durationMin: number;
+        status: import("@prisma/client").$Enums.AppointmentStatus;
         source: import("@prisma/client").$Enums.AppointmentSource;
         externalId: string | null;
         notes: string | null;
@@ -61,18 +61,18 @@ export declare class AgendaController {
     })[]>;
     findOne(clinicId: string, id: string): Promise<{
         doctor: {
-            name: string;
             id: string;
             clinicId: string;
+            name: string;
             updatedAt: Date | null;
             active: boolean | null;
             createdAt: Date | null;
             title: string;
         } | null;
         treatment: {
-            name: string;
             id: string;
             clinicId: string;
+            name: string;
             updatedAt: Date | null;
             active: boolean | null;
             createdAt: Date | null;
@@ -81,9 +81,9 @@ export declare class AgendaController {
             encyclopediaRef: string | null;
         } | null;
         contact: {
-            name: string | null;
             id: string;
             clinicId: string;
+            name: string | null;
             phone: string | null;
             email: string | null;
             updatedAt: Date | null;
@@ -92,25 +92,25 @@ export declare class AgendaController {
             lastInteractionAt: Date | null;
         } | null;
         history: {
-            payload: import("@prisma/client/runtime/library").JsonValue | null;
             id: string;
             createdAt: Date | null;
+            payload: import("@prisma/client/runtime/library").JsonValue | null;
             appointmentId: string;
             event: string;
         }[];
     } & {
-        status: import("@prisma/client").$Enums.AppointmentStatus;
         id: string;
         clinicId: string;
         updatedAt: Date | null;
         createdAt: Date | null;
-        doctorId: string | null;
         treatmentId: string | null;
-        conversationId: string | null;
         contactId: string | null;
+        doctorId: string | null;
+        conversationId: string | null;
         contactName: string | null;
         scheduledAt: Date;
         durationMin: number;
+        status: import("@prisma/client").$Enums.AppointmentStatus;
         source: import("@prisma/client").$Enums.AppointmentSource;
         externalId: string | null;
         notes: string | null;
@@ -119,18 +119,18 @@ export declare class AgendaController {
         reminder1hSent: boolean | null;
     }>;
     create(clinicId: string, dto: CreateAppointmentDto): Promise<{
-        status: import("@prisma/client").$Enums.AppointmentStatus;
         id: string;
         clinicId: string;
         updatedAt: Date | null;
         createdAt: Date | null;
-        doctorId: string | null;
         treatmentId: string | null;
-        conversationId: string | null;
         contactId: string | null;
+        doctorId: string | null;
+        conversationId: string | null;
         contactName: string | null;
         scheduledAt: Date;
         durationMin: number;
+        status: import("@prisma/client").$Enums.AppointmentStatus;
         source: import("@prisma/client").$Enums.AppointmentSource;
         externalId: string | null;
         notes: string | null;
@@ -139,18 +139,18 @@ export declare class AgendaController {
         reminder1hSent: boolean | null;
     }>;
     updateStatus(clinicId: string, id: string, dto: UpdateStatusDto): Promise<{
-        status: import("@prisma/client").$Enums.AppointmentStatus;
         id: string;
         clinicId: string;
         updatedAt: Date | null;
         createdAt: Date | null;
-        doctorId: string | null;
         treatmentId: string | null;
-        conversationId: string | null;
         contactId: string | null;
+        doctorId: string | null;
+        conversationId: string | null;
         contactName: string | null;
         scheduledAt: Date;
         durationMin: number;
+        status: import("@prisma/client").$Enums.AppointmentStatus;
         source: import("@prisma/client").$Enums.AppointmentSource;
         externalId: string | null;
         notes: string | null;
@@ -159,18 +159,18 @@ export declare class AgendaController {
         reminder1hSent: boolean | null;
     }>;
     reschedule(clinicId: string, id: string, dto: RescheduleDto): Promise<{
-        status: import("@prisma/client").$Enums.AppointmentStatus;
         id: string;
         clinicId: string;
         updatedAt: Date | null;
         createdAt: Date | null;
-        doctorId: string | null;
         treatmentId: string | null;
-        conversationId: string | null;
         contactId: string | null;
+        doctorId: string | null;
+        conversationId: string | null;
         contactName: string | null;
         scheduledAt: Date;
         durationMin: number;
+        status: import("@prisma/client").$Enums.AppointmentStatus;
         source: import("@prisma/client").$Enums.AppointmentSource;
         externalId: string | null;
         notes: string | null;

@@ -4,6 +4,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { AppModule } from './app.module';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { ConfigService } from '@nestjs/config';
+import { ConversationGateway } from './conversation/conversation.gateway';
 
 const createMockFn = (returnValue?: any) => {
   const fn = (...args: any[]) => {
@@ -47,14 +48,20 @@ async function verifyCoreService() {
   };
 
   const mockConfig = { get: (k: string, d: string) => d };
+  const mockGateway = {
+    emitEvent: (event: string, payload: any) => {
+      console.log(`[Mock Gateway] Emitted ${event}:`, payload);
+    }
+  };
 
   try {
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService).useValue(mockPrisma)
     .overrideProvider(ConfigService).useValue(mockConfig)
+    .overrideProvider(ConversationGateway).useValue(mockGateway)
     .compile();
 
-    app = moduleFixture.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    app = moduleFixture.createNestApplication(new FastifyAdapter() as any) as any as NestFastifyApplication;
     app.setGlobalPrefix('api');
     const { ValidationPipe } = await import('@nestjs/common');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

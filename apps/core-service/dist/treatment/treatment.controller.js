@@ -38,6 +38,9 @@ let TreatmentController = class TreatmentController {
     async update(clinicId, id, dto) {
         return this.treatmentService.update(clinicId, id, dto);
     }
+    async updatePut(clinicId, id, dto) {
+        return this.treatmentService.update(clinicId, id, dto);
+    }
     async remove(clinicId, id) {
         return this.treatmentService.remove(clinicId, id);
     }
@@ -93,6 +96,16 @@ __decorate([
     __metadata("design:paramtypes", [String, String, treatment_dto_1.UpdateTreatmentDto]),
     __metadata("design:returntype", Promise)
 ], TreatmentController.prototype, "update", null);
+__decorate([
+    (0, common_1.Put)(':id'),
+    (0, shared_nestjs_1.Auditable)('treatment'),
+    __param(0, (0, shared_nestjs_1.CurrentClinicId)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, treatment_dto_1.UpdateTreatmentDto]),
+    __metadata("design:returntype", Promise)
+], TreatmentController.prototype, "updatePut", null);
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, shared_nestjs_1.Auditable)('treatment'),

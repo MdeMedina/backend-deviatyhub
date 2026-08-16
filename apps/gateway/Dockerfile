@@ -1,7 +1,7 @@
 # Stage 1: Build
 FROM node:20-alpine AS builder
 WORKDIR /app
-RUN npm install -g turbo
+RUN npm install --legacy-peer-deps -g turbo
 COPY . .
 RUN turbo prune @deviaty/gateway --docker
 
@@ -11,7 +11,7 @@ WORKDIR /app
 
 COPY --from=builder /app/out/json/ .
 COPY --from=builder /app/out/package-lock.json ./package-lock.json
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 COPY --from=builder /app/out/full/ .
 COPY turbo.json turbo.json
@@ -30,7 +30,9 @@ RUN adduser --system --uid 1001 nestjs
 USER nestjs
 
 COPY --from=installer /app/apps/gateway/dist ./dist
+COPY --from=installer /app/packages ./packages
 COPY --from=installer /app/node_modules ./node_modules
+COPY --from=installer /app/apps/gateway/node_modules ./node_modules
 COPY --from=installer /app/apps/gateway/package.json ./package.json
 
 EXPOSE 3000

@@ -4,9 +4,9 @@ export declare class ClinicController {
     private readonly clinicService;
     constructor(clinicService: ClinicService);
     getConfig(clinicId: string): Promise<{
-        name: string;
         id: string;
         clinicId: string;
+        name: string;
         address: string;
         phone: string;
         email: string;
@@ -15,9 +15,9 @@ export declare class ClinicController {
         updatedAt: Date | null;
     }>;
     updateConfig(clinicId: string, dto: UpdateClinicConfigDto): Promise<{
-        name: string;
         id: string;
         clinicId: string;
+        name: string;
         address: string;
         phone: string;
         email: string;
@@ -26,12 +26,10 @@ export declare class ClinicController {
         updatedAt: Date | null;
     }>;
     getSchedules(clinicId: string): Promise<{
-        id: string;
-        clinicId: string;
-        dayOfWeek: number;
-        openTime: string;
-        closeTime: string;
-        isOpen: boolean | null;
+        day_of_week: number;
+        open_time: string;
+        close_time: string;
+        is_open: boolean;
     }[]>;
     updateSchedules(clinicId: string, dto: UpdateSchedulesDto): Promise<{
         message: string;

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit, Logger } from '@nestjs/common';
 import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
 
@@ -7,4 +7,11 @@ import { MetricsService } from './metrics.service';
   providers: [MetricsService],
   exports: [MetricsService],
 })
-export class MetricsModule {}
+export class MetricsModule implements OnModuleInit {
+  private readonly logger = new Logger(MetricsModule.name);
+
+  onModuleInit() {
+    this.logger.log('MetricsModule initialized');
+  }
+}
+

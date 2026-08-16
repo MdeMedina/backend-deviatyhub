@@ -6,6 +6,7 @@ export declare class UpdateUserDto {
     email?: string;
     roleId?: string;
     active?: boolean;
+    password?: string;
 }
 export declare class SetPasswordDto {
     token: string;

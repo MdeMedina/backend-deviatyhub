@@ -18,7 +18,7 @@ import { MetricsModule } from './metrics/metrics.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-    }),
+    }) as any,
     PrismaModule,
     ClinicModule,
     DoctorModule,
@@ -30,10 +30,6 @@ import { MetricsModule } from './metrics/metrics.module';
   controllers: [],
   providers: [
     Reflector,
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: AuditInterceptor,
-    },
     {
       provide: APP_INTERCEPTOR,
       useClass: ApiResponseInterceptor,

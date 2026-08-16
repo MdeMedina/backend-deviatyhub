@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "dev": "npm run start:dev",
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -16,13 +17,17 @@
     "@deviaty/shared-types": "^1.0.0",
     "@deviaty/shared-utils": "^1.0.0",
     "@nestjs/common": "^11.0.1",
-    "@nestjs/config": "^4.0.4",
+    "@nestjs/config": "^3.3.0",
     "@nestjs/core": "^11.0.1",
-    "@nestjs/platform-fastify": "^11.0.1",
+    "@nestjs/platform-fastify": "^11.1.19",
+    "@nestjs/platform-socket.io": "^11.1.21",
+    "@nestjs/websockets": "^11.1.21",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "date-fns": "^3.6.0",
     "reflect-metadata": "^0.1.13",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.1",

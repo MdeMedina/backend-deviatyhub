@@ -16,15 +16,15 @@ export class CreateTreatmentDto {
   name!: string;
 
   @IsString()
-  @IsNotEmpty()
-  category!: string;
+  @IsOptional()
+  category?: string;
 
   @IsInt()
   @Min(1)
   @IsOptional()
   duration_avg_min?: number;
 
-  @IsUUID('4')
+  @IsString()
   @IsOptional()
   encyclopedia_ref?: string;
 
@@ -32,6 +32,43 @@ export class CreateTreatmentDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   doctor_ids?: string[];
+
+  // Campos adicionales del frontend
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsOptional()
+  price?: number;
+
+  @IsOptional()
+  duration_min?: number;
+
+  @IsOptional()
+  price_isapre?: number;
+
+  @IsOptional()
+  price_fonasa?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  accepts_isapre?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  accepts_fonasa?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  doctors?: any[];
+
+  @IsOptional()
+  @IsArray()
+  offers?: any[];
 }
 
 export class UpdateTreatmentDto {
@@ -48,7 +85,7 @@ export class UpdateTreatmentDto {
   @IsOptional()
   duration_avg_min?: number;
 
-  @IsUUID('4')
+  @IsString()
   @IsOptional()
   encyclopedia_ref?: string;
 
@@ -60,6 +97,39 @@ export class UpdateTreatmentDto {
   @IsBoolean()
   @IsOptional()
   active?: boolean;
+
+  // Campos adicionales del frontend
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsOptional()
+  price?: number;
+
+  @IsOptional()
+  duration_min?: number;
+
+  @IsOptional()
+  price_isapre?: number;
+
+  @IsOptional()
+  price_fonasa?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  accepts_isapre?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  accepts_fonasa?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  doctors?: any[];
+
+  @IsOptional()
+  @IsArray()
+  offers?: any[];
 }
 
 export class CreateOfferDto {
@@ -69,9 +139,24 @@ export class CreateOfferDto {
 
   @IsInt()
   @Min(0)
-  price!: number;
+  @IsOptional()
+  price?: number;
 
   @IsOptional()
-  @Type(() => Date)
-  valid_until?: Date;
+  discount_pct?: number;
+
+  @IsOptional()
+  fixed_price?: number;
+
+  @IsOptional()
+  @IsString()
+  valid_from?: string;
+
+  @IsOptional()
+  @IsString()
+  valid_until?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }

@@ -1,1 +1,1 @@
-{"version":3,"file":"conversation.module.d.ts","sourceRoot":"","sources":["../../src/conversation/conversation.module.ts"],"names":[],"mappings":"AAIA,qBAKa,kBAAkB;CAAG"}
+{"version":3,"file":"conversation.module.d.ts","sourceRoot":"","sources":["../../src/conversation/conversation.module.ts"],"names":[],"mappings":"AAAA,OAAO,EAAU,YAAY,EAAU,MAAM,gBAAgB,CAAC;AAK9D,qBAKa,kBAAmB,YAAW,YAAY;IACrD,OAAO,CAAC,QAAQ,CAAC,MAAM,CAAuC;IAE9D,YAAY;CAGb"}

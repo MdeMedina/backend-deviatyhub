@@ -10,6 +10,7 @@ import {
   Headers,
   Inject,
   ParseUUIDPipe,
+  Logger,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { InviteUserDto, UpdateUserDto } from './dto/users.dto';
@@ -17,10 +18,14 @@ import { Auditable } from '../common/decorators/auditable.decorator';
 
 @Controller('auth/users')
 export class UsersController {
+  private readonly logger = new Logger(UsersController.name);
+
   constructor(
     @Inject(UsersService)
     private readonly usersService: UsersService,
-  ) {}
+  ) {
+    this.logger.log('UsersController initialized');
+  }
 
   @Post('invite')
   @Auditable('user')
@@ -28,6 +33,7 @@ export class UsersController {
     @Headers('x-clinic-id') clinicId: string,
     @Body() inviteUserDto: InviteUserDto,
   ) {
+    this.logger.log(`Inviting user: ${inviteUserDto.email} for clinicId: ${clinicId}`);
     return this.usersService.invite(clinicId, inviteUserDto);
   }
 
@@ -37,6 +43,7 @@ export class UsersController {
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
+    this.logger.log(`Fetching users for clinicId: ${clinicId} (page=${page}, limit=${limit})`);
     return this.usersService.findAll(clinicId, page, limit);
   }
 
@@ -45,6 +52,7 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Headers('x-clinic-id') clinicId: string,
   ) {
+    this.logger.log(`Fetching user: ${id} for clinicId: ${clinicId}`);
     return this.usersService.findOne(id, clinicId);
   }
 
@@ -55,6 +63,7 @@ export class UsersController {
     @Headers('x-clinic-id') clinicId: string,
     @Body() updateUserDto: UpdateUserDto,
   ) {
+    this.logger.log(`Updating user: ${id} for clinicId: ${clinicId}`);
     return this.usersService.update(id, clinicId, updateUserDto);
   }
 
@@ -64,6 +73,8 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Headers('x-clinic-id') clinicId: string,
   ) {
+    this.logger.log(`Removing user: ${id} for clinicId: ${clinicId}`);
     return this.usersService.remove(id, clinicId);
   }
 }
+

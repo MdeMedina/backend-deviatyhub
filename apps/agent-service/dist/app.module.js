@@ -15,6 +15,7 @@ const brain_module_1 = require("./brain/brain.module");
 const worker_module_1 = require("./worker/worker.module");
 const core_1 = require("@nestjs/core");
 const shared_nestjs_1 = require("@deviaty/shared-nestjs");
+const agent_controller_1 = require("./agent.controller");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -26,12 +27,16 @@ exports.AppModule = AppModule = __decorate([
             }),
             bullmq_1.BullModule.forRootAsync({
                 imports: [config_1.ConfigModule],
-                useFactory: (configService) => ({
-                    connection: {
-                        host: configService.get('REDIS_HOST', 'localhost'),
-                        port: configService.get('REDIS_PORT', 6379),
-                    },
-                }),
+                useFactory: (configService) => {
+                    const redisUrl = configService.get('REDIS_URL', 'redis://localhost:6379');
+                    const url = new URL(redisUrl);
+                    return {
+                        connection: {
+                            host: url.hostname || 'localhost',
+                            port: parseInt(url.port) || 6379,
+                        },
+                    };
+                },
                 inject: [config_1.ConfigService],
             }),
             bullmq_1.BullModule.registerQueue({
@@ -41,11 +46,20 @@ exports.AppModule = AppModule = __decorate([
             brain_module_1.BrainModule,
             worker_module_1.WorkerModule,
         ],
+        controllers: [agent_controller_1.AgentController],
         providers: [
             core_1.Reflector,
             {
                 provide: core_1.APP_INTERCEPTOR,
                 useClass: shared_nestjs_1.AuditInterceptor,
+            },
+            {
+                provide: core_1.APP_INTERCEPTOR,
+                useClass: shared_nestjs_1.ApiResponseInterceptor,
+            },
+            {
+                provide: core_1.APP_FILTER,
+                useClass: shared_nestjs_1.HttpExceptionFilter,
             },
         ],
     })

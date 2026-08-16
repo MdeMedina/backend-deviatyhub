@@ -11,16 +11,19 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var DoctorController_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DoctorController = void 0;
 const common_1 = require("@nestjs/common");
 const shared_nestjs_1 = require("@deviaty/shared-nestjs");
 const doctor_service_1 = require("./doctor.service");
 const doctor_dto_1 = require("./dto/doctor.dto");
-let DoctorController = class DoctorController {
+let DoctorController = DoctorController_1 = class DoctorController {
     doctorService;
+    logger = new common_1.Logger(DoctorController_1.name);
     constructor(doctorService) {
         this.doctorService = doctorService;
+        this.logger.log('DoctorController initialized');
     }
     async findAll(clinicId, active) {
         const isActive = active === 'true' ? true : active === 'false' ? false : undefined;
@@ -33,6 +36,9 @@ let DoctorController = class DoctorController {
         return this.doctorService.create(clinicId, dto);
     }
     async update(clinicId, id, dto) {
+        return this.doctorService.update(clinicId, id, dto);
+    }
+    async updatePut(clinicId, id, dto) {
         return this.doctorService.update(clinicId, id, dto);
     }
     async remove(clinicId, id) {
@@ -76,6 +82,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], DoctorController.prototype, "update", null);
 __decorate([
+    (0, common_1.Put)(':id'),
+    (0, shared_nestjs_1.Auditable)('doctor'),
+    __param(0, (0, shared_nestjs_1.CurrentClinicId)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, doctor_dto_1.UpdateDoctorDto]),
+    __metadata("design:returntype", Promise)
+], DoctorController.prototype, "updatePut", null);
+__decorate([
     (0, common_1.Delete)(':id'),
     (0, shared_nestjs_1.Auditable)('doctor'),
     __param(0, (0, shared_nestjs_1.CurrentClinicId)()),
@@ -84,7 +100,7 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], DoctorController.prototype, "remove", null);
-exports.DoctorController = DoctorController = __decorate([
+exports.DoctorController = DoctorController = DoctorController_1 = __decorate([
     (0, common_1.Controller)('doctors'),
     __param(0, (0, common_1.Inject)(doctor_service_1.DoctorService)),
     __metadata("design:paramtypes", [doctor_service_1.DoctorService])

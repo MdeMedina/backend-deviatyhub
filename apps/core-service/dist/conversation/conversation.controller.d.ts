@@ -6,9 +6,9 @@ export declare class ConversationController {
     findAll(clinicId: string, filters: ConversationFilterDto): Promise<{
         data: ({
             contact: {
-                name: string | null;
                 id: string;
                 clinicId: string;
+                name: string | null;
                 phone: string | null;
                 email: string | null;
                 updatedAt: Date | null;
@@ -17,24 +17,25 @@ export declare class ConversationController {
                 lastInteractionAt: Date | null;
             } | null;
             messages: {
-                content: string;
                 id: string;
                 clinicId: string;
                 role: import("@prisma/client").$Enums.MessageRole;
                 conversationId: string;
                 sentAt: Date | null;
+                content: string;
                 langchainMeta: import("@prisma/client/runtime/library").JsonValue | null;
             }[];
         } & {
-            status: import("@prisma/client").$Enums.ConversationStatus;
             id: string;
             clinicId: string;
             contactId: string | null;
+            status: import("@prisma/client").$Enums.ConversationStatus;
             channel: string;
             currentStep: string;
             assignedUserId: string | null;
             startedAt: Date | null;
             closedAt: Date | null;
+            metadata: import("@prisma/client/runtime/library").JsonValue | null;
         })[];
         meta: {
             page: number;
@@ -45,9 +46,9 @@ export declare class ConversationController {
     }>;
     findContacts(clinicId: string, search?: string, page?: string, limit?: string): Promise<{
         data: {
-            name: string | null;
             id: string;
             clinicId: string;
+            name: string | null;
             phone: string | null;
             email: string | null;
             updatedAt: Date | null;
@@ -65,18 +66,18 @@ export declare class ConversationController {
     findOne(clinicId: string, id: string): Promise<{
         appointments: ({
             doctor: {
-                name: string;
                 id: string;
                 clinicId: string;
+                name: string;
                 updatedAt: Date | null;
                 active: boolean | null;
                 createdAt: Date | null;
                 title: string;
             } | null;
             treatment: {
-                name: string;
                 id: string;
                 clinicId: string;
+                name: string;
                 updatedAt: Date | null;
                 active: boolean | null;
                 createdAt: Date | null;
@@ -85,18 +86,18 @@ export declare class ConversationController {
                 encyclopediaRef: string | null;
             } | null;
         } & {
-            status: import("@prisma/client").$Enums.AppointmentStatus;
             id: string;
             clinicId: string;
             updatedAt: Date | null;
             createdAt: Date | null;
-            doctorId: string | null;
             treatmentId: string | null;
-            conversationId: string | null;
             contactId: string | null;
+            doctorId: string | null;
+            conversationId: string | null;
             contactName: string | null;
             scheduledAt: Date;
             durationMin: number;
+            status: import("@prisma/client").$Enums.AppointmentStatus;
             source: import("@prisma/client").$Enums.AppointmentSource;
             externalId: string | null;
             notes: string | null;
@@ -105,9 +106,9 @@ export declare class ConversationController {
             reminder1hSent: boolean | null;
         })[];
         contact: {
-            name: string | null;
             id: string;
             clinicId: string;
+            name: string | null;
             phone: string | null;
             email: string | null;
             updatedAt: Date | null;
@@ -116,54 +117,57 @@ export declare class ConversationController {
             lastInteractionAt: Date | null;
         } | null;
         messages: {
-            content: string;
             id: string;
             clinicId: string;
             role: import("@prisma/client").$Enums.MessageRole;
             conversationId: string;
             sentAt: Date | null;
+            content: string;
             langchainMeta: import("@prisma/client/runtime/library").JsonValue | null;
         }[];
     } & {
-        status: import("@prisma/client").$Enums.ConversationStatus;
         id: string;
         clinicId: string;
         contactId: string | null;
+        status: import("@prisma/client").$Enums.ConversationStatus;
         channel: string;
         currentStep: string;
         assignedUserId: string | null;
         startedAt: Date | null;
         closedAt: Date | null;
+        metadata: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     takeover(clinicId: string, userId: string, id: string): Promise<{
-        status: import("@prisma/client").$Enums.ConversationStatus;
         id: string;
         clinicId: string;
         contactId: string | null;
+        status: import("@prisma/client").$Enums.ConversationStatus;
         channel: string;
         currentStep: string;
         assignedUserId: string | null;
         startedAt: Date | null;
         closedAt: Date | null;
+        metadata: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     release(clinicId: string, id: string): Promise<{
-        status: import("@prisma/client").$Enums.ConversationStatus;
         id: string;
         clinicId: string;
         contactId: string | null;
+        status: import("@prisma/client").$Enums.ConversationStatus;
         channel: string;
         currentStep: string;
         assignedUserId: string | null;
         startedAt: Date | null;
         closedAt: Date | null;
+        metadata: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     sendMessage(clinicId: string, userId: string, id: string, dto: ManualMessageDto): Promise<{
-        content: string;
         id: string;
         clinicId: string;
         role: import("@prisma/client").$Enums.MessageRole;
         conversationId: string;
         sentAt: Date | null;
+        content: string;
         langchainMeta: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
 }

@@ -1,1 +1,1 @@
-{"version":3,"file":"agenda.module.d.ts","sourceRoot":"","sources":["../../src/agenda/agenda.module.ts"],"names":[],"mappings":"AAIA,qBAIa,YAAY;CAAG"}
+{"version":3,"file":"agenda.module.d.ts","sourceRoot":"","sources":["../../src/agenda/agenda.module.ts"],"names":[],"mappings":"AAAA,OAAO,EAAU,YAAY,EAAU,MAAM,gBAAgB,CAAC;AAI9D,qBAIa,YAAa,YAAW,YAAY;IAC/C,OAAO,CAAC,QAAQ,CAAC,MAAM,CAAiC;IAExD,YAAY;CAGb"}

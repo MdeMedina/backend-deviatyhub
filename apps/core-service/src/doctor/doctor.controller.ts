@@ -3,11 +3,13 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
   Query,
   Inject,
+  Logger,
 } from '@nestjs/common';
 import {
   Auditable,
@@ -18,10 +20,14 @@ import { CreateDoctorDto, UpdateDoctorDto } from './dto/doctor.dto';
 
 @Controller('doctors')
 export class DoctorController {
+  private readonly logger = new Logger(DoctorController.name);
+
   constructor(
     @Inject(DoctorService)
     private readonly doctorService: DoctorService
-  ) {}
+  ) {
+    this.logger.log('DoctorController initialized');
+  }
 
   @Get()
   async findAll(
@@ -52,6 +58,16 @@ export class DoctorController {
   @Patch(':id')
   @Auditable('doctor')
   async update(
+    @CurrentClinicId() clinicId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateDoctorDto
+  ) {
+    return this.doctorService.update(clinicId, id, dto);
+  }
+
+  @Put(':id')
+  @Auditable('doctor')
+  async updatePut(
     @CurrentClinicId() clinicId: string,
     @Param('id') id: string,
     @Body() dto: UpdateDoctorDto

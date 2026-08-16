@@ -92,6 +92,7 @@ class CreateUnavailabilityDto {
     days_of_week;
     start_time;
     end_time;
+    active;
 }
 exports.CreateUnavailabilityDto = CreateUnavailabilityDto;
 __decorate([
@@ -111,6 +112,11 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateUnavailabilityDto.prototype, "end_time", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateUnavailabilityDto.prototype, "active", void 0);
 class UpdateUnavailabilityDto {
     name;
     days_of_week;
@@ -148,6 +154,7 @@ __decorate([
 class CreatePolicyDto {
     title;
     description;
+    active;
 }
 exports.CreatePolicyDto = CreatePolicyDto;
 __decorate([
@@ -158,6 +165,11 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreatePolicyDto.prototype, "description", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreatePolicyDto.prototype, "active", void 0);
 class UpdatePolicyDto {
     title;
     description;

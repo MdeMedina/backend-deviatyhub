@@ -30,6 +30,7 @@ class UpdateUserDto {
     email;
     roleId;
     active;
+    password;
 }
 exports.UpdateUserDto = UpdateUserDto;
 __decorate([
@@ -47,6 +48,11 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Boolean)
 ], UpdateUserDto.prototype, "active", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], UpdateUserDto.prototype, "password", void 0);
 class SetPasswordDto {
     token;
     password;
