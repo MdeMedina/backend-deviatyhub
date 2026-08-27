@@ -299,6 +299,14 @@ model Treatment {
   durationAvgMin  Int?     @map("duration_avg_min")
   encyclopediaRef String?  @map("encyclopedia_ref") @db.Uuid
   active          Boolean?  @default(true)
+  // Campos que la API/front usan directamente sobre el tratamiento
+  description     String?
+  durationMin     Int?      @map("duration_min")
+  price           Int?
+  priceIsapre     Int?      @map("price_isapre")
+  priceFonasa     Int?      @map("price_fonasa")
+  acceptsIsapre   Boolean?  @default(false) @map("accepts_isapre")
+  acceptsFonasa   Boolean?  @default(false) @map("accepts_fonasa")
   createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -328,8 +336,11 @@ model TreatmentOffer {
   clinicId    String   @map("clinic_id") @db.Uuid
   treatmentId String   @map("treatment_id") @db.Uuid
   label       String
-  price       Int
+  price       Int?
+  discountPct Int?      @map("discount_pct")
+  fixedPrice  Int?      @map("fixed_price")
   active      Boolean?  @default(true)
+  validFrom   DateTime? @map("valid_from") @db.Timestamptz
   validUntil  DateTime? @map("valid_until") @db.Timestamptz
   createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz
 

@@ -76,6 +76,13 @@ export class TreatmentService {
           name: dto.name,
           category,
           durationAvgMin,
+          durationMin: dto.duration_min ?? null,
+          description: dto.description ?? null,
+          price: dto.price ?? null,
+          priceIsapre: dto.price_isapre ?? dto.price ?? null,
+          priceFonasa: dto.price_fonasa ?? dto.price ?? null,
+          acceptsIsapre: dto.accepts_isapre ?? false,
+          acceptsFonasa: dto.accepts_fonasa ?? false,
           encyclopediaRef,
           active: dto.active ?? true,
           clinicId,
@@ -135,6 +142,13 @@ export class TreatmentService {
           ...(dto.name !== undefined ? { name: dto.name } : {}),
           ...(dto.category !== undefined ? { category: dto.category } : {}),
           ...(durationAvgMin !== undefined ? { durationAvgMin } : {}),
+          ...(dto.duration_min !== undefined ? { durationMin: dto.duration_min } : {}),
+          ...(dto.description !== undefined ? { description: dto.description } : {}),
+          ...(dto.price !== undefined ? { price: dto.price } : {}),
+          ...(dto.price_isapre !== undefined ? { priceIsapre: dto.price_isapre } : {}),
+          ...(dto.price_fonasa !== undefined ? { priceFonasa: dto.price_fonasa } : {}),
+          ...(dto.accepts_isapre !== undefined ? { acceptsIsapre: dto.accepts_isapre } : {}),
+          ...(dto.accepts_fonasa !== undefined ? { acceptsFonasa: dto.accepts_fonasa } : {}),
           ...(encyclopediaRef !== undefined ? { encyclopediaRef } : {}),
           ...(dto.active !== undefined ? { active: dto.active } : {}),
         },
@@ -196,25 +210,29 @@ export class TreatmentService {
   }
 
   private mapOfferToFrontend(o: any, basePrice: number) {
-    const discount_pct = basePrice > 0 && o.price < basePrice
+    const computedDiscount = basePrice > 0 && o.price != null && o.price < basePrice
       ? Math.round((1 - o.price / basePrice) * 100)
       : 0;
+    const discount_pct = o.discountPct ?? computedDiscount;
+    const fixed_price = o.fixedPrice ?? o.price ?? 0;
 
     return {
       id: o.id,
       label: o.label,
       discount_pct,
-      fixed_price: o.price,
-      valid_from: o.createdAt ? o.createdAt.toISOString() : new Date().toISOString(),
+      fixed_price,
+      valid_from: o.validFrom
+        ? o.validFrom.toISOString()
+        : (o.createdAt ? o.createdAt.toISOString() : new Date().toISOString()),
       valid_until: o.validUntil ? o.validUntil.toISOString() : '',
       active: o.active ?? true,
-      price: o.price,
+      price: o.price ?? fixed_price,
     };
   }
 
   private async mapTreatmentToFrontend(t: any): Promise<any> {
     const baseOffer = t.offers?.find((o: any) => o.label === 'Precio Base') || t.offers?.[0];
-    const price = baseOffer ? baseOffer.price : 0;
+    const price = t.price ?? (baseOffer ? baseOffer.price : 0) ?? 0;
 
     let description = '';
     if (t.encyclopediaRef) {
@@ -242,13 +260,13 @@ export class TreatmentService {
       id: t.id,
       name: t.name,
       category: t.category,
-      description,
-      duration_min: t.durationAvgMin || 15,
+      description: t.description || description,
+      duration_min: t.durationMin ?? t.durationAvgMin ?? 15,
       price,
-      price_isapre: price,
-      price_fonasa: price,
-      accepts_isapre: true,
-      accepts_fonasa: true,
+      price_isapre: t.priceIsapre ?? price,
+      price_fonasa: t.priceFonasa ?? price,
+      accepts_isapre: t.acceptsIsapre ?? true,
+      accepts_fonasa: t.acceptsFonasa ?? true,
       active: t.active ?? true,
       encyclopedia_ref: t.encyclopediaRef || '',
       doctors,
@@ -277,7 +295,10 @@ export class TreatmentService {
       data: {
         label: dto.label,
         price: Math.round(computedPrice),
+        discountPct: dto.discount_pct ?? null,
+        fixedPrice: dto.fixed_price ?? null,
         active: dto.active ?? true,
+        validFrom: dto.valid_from ? new Date(dto.valid_from) : null,
         validUntil: dto.valid_until ? new Date(dto.valid_until) : null,
         treatmentId,
         clinicId,
