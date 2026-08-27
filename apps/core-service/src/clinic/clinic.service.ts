@@ -10,6 +10,14 @@ import {
   UpdatePolicyDto,
 } from './dto/clinic.dto';
 
+// Clave usada para cifrar/descifrar las credenciales de integraciones (AES-256).
+// TODO (seguridad): migrar a una AES_SECRET_KEY dedicada en vez de reutilizar el secreto JWT.
+function requiredCredentialsKey(): string {
+  const secret = process.env.JWT_ACCESS_SECRET;
+  if (!secret) throw new Error('JWT_ACCESS_SECRET no está configurado');
+  return secret;
+}
+
 @Injectable()
 export class ClinicService {
   private readonly logger = new Logger(ClinicService.name);
@@ -294,7 +302,7 @@ export class ClinicService {
     let credentials: Record<string, string> = {};
     if (credsObj.encrypted_data) {
       try {
-        const secretKey = process.env.JWT_ACCESS_SECRET || 'deviaty_super_secret_key_2026';
+        const secretKey = requiredCredentialsKey();
         const decrypted = decryptAES256(credsObj.encrypted_data, secretKey);
         credentials = JSON.parse(decrypted);
       } catch (error) {
@@ -479,7 +487,7 @@ export class ClinicService {
       const existingObj = existing.credentials as any;
       if (existingObj.encrypted_data) {
         try {
-          const secretKey = process.env.JWT_ACCESS_SECRET || 'deviaty_super_secret_key_2026';
+          const secretKey = requiredCredentialsKey();
           const decrypted = decryptAES256(existingObj.encrypted_data, secretKey);
           existingCredentials = JSON.parse(decrypted);
         } catch (error) {
@@ -511,7 +519,7 @@ export class ClinicService {
     }
 
     // Cifrar credenciales
-    const secretKey = process.env.JWT_ACCESS_SECRET || 'deviaty_super_secret_key_2026';
+    const secretKey = requiredCredentialsKey();
     const encryptedData = encryptAES256(JSON.stringify(cleanCredentials), secretKey);
 
     const testedAt = new Date();
@@ -568,7 +576,7 @@ export class ClinicService {
       const credsObj = integration.credentials as any;
       if (credsObj.encrypted_data) {
         try {
-          const secretKey = process.env.JWT_ACCESS_SECRET || 'deviaty_super_secret_key_2026';
+          const secretKey = requiredCredentialsKey();
           const decrypted = decryptAES256(credsObj.encrypted_data, secretKey);
           savedCredentials = JSON.parse(decrypted);
         } catch (error) {

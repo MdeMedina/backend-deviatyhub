@@ -49,8 +49,8 @@ export class ProxyModule implements OnModuleInit {
 
         if (jwtToken) {
           try {
-            // Se usa el secret configurado o el de desarrollo por defecto
-            const secret = process.env.JWT_ACCESS_SECRET || 'dev-access-secret';
+            const secret = process.env.JWT_ACCESS_SECRET;
+            if (!secret) throw new Error('JWT_ACCESS_SECRET no está configurado');
             const payload = verifyJWT<any>(jwtToken, secret);
             clinicId = payload.clinicId;
             userId = payload.userId;

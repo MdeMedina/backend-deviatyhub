@@ -48,7 +48,8 @@ async function sendToMeta(event: any) {
       if (integration && integration.credentials) {
         const credsObj = integration.credentials as any;
         if (credsObj.encrypted_data) {
-          const secretKey = process.env.JWT_ACCESS_SECRET || 'deviaty_super_secret_key_2026';
+          const secretKey = process.env.JWT_ACCESS_SECRET;
+          if (!secretKey) throw new Error('JWT_ACCESS_SECRET no está configurado');
           const decrypted = decryptAES256(credsObj.encrypted_data, secretKey);
           const credentials = JSON.parse(decrypted);
 

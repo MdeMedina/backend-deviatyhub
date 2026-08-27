@@ -20,8 +20,8 @@ export class AuthService {
     @Inject('EVENT_BUS')
     private eventBus: EventBus,
   ) {
-    this.accessSecret = this.config.get<string>('JWT_ACCESS_SECRET', 'dev-access-secret')!;
-    this.refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET', 'dev-refresh-secret')!;
+    this.accessSecret = this.config.getOrThrow<string>('JWT_ACCESS_SECRET');
+    this.refreshSecret = this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
     this.logger.log('AuthService initialized');
   }
 
