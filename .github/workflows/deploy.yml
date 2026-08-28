@@ -1,0 +1,54 @@
+name: Deploy backend (producción)
+
+# Despliega al VPS por SSH cuando se hace push a main (o manualmente).
+# Requiere estos GitHub Secrets:
+#   DEPLOY_HOST     -> IP/host del servidor (p.ej. 158.69.202.175)
+#   DEPLOY_USER     -> usuario SSH (p.ej. ubuntu)
+#   DEPLOY_SSH_KEY  -> clave privada del deploy key (ed25519) autorizada en el server
+#
+# El servidor debe tener: Docker + docker compose, y el repo clonado en
+# ~/backend-deviatyhub con un archivo .env (NO versionado) con los secretos reales.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Desplegar por SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            cd ~/backend-deviatyhub
+
+            echo "==> Actualizando código (main)"
+            git fetch --all --prune
+            git checkout main
+            git reset --hard origin/main
+
+            echo "==> Build de imágenes"
+            docker compose build
+
+            echo "==> Levantando servicios (redis, postgres, microservicios)"
+            docker compose up -d
+
+            echo "==> Migraciones + seed (idempotente)"
+            docker compose run --rm -w /app/packages/shared-prisma auth-service \
+              npx prisma db push --skip-generate --accept-data-loss
+            docker compose run --rm -w /app/packages/shared-prisma auth-service \
+              npx tsx prisma/seed.ts
+
+            echo "==> Estado final"
+            docker compose ps
