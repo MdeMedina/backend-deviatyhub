@@ -153,6 +153,7 @@ model RefreshToken {
 
   user      User     @relation(fields: [userId], references: [id])
 
+  @@index([userId])
   @@map("refresh_tokens")
 }
 
@@ -196,6 +197,7 @@ model AuditLog {
   clinic    Clinic   @relation(fields: [clinicId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
 
+  @@index([clinicId, createdAt])
   @@map("audit_logs")
 }
 
@@ -208,6 +210,7 @@ model PlatformMetric {
 
   clinic     Clinic   @relation(fields: [clinicId], references: [id])
 
+  @@index([clinicId, metricType, recordedAt])
   @@map("platform_metrics")
 }
 
@@ -315,6 +318,7 @@ model Treatment {
   offers       TreatmentOffer[]
   appointments Appointment[]
 
+  @@index([clinicId, active])
   @@map("treatments")
 }
 
@@ -377,6 +381,8 @@ model Appointment {
   conversation Conversation? @relation(fields: [conversationId], references: [id])
   history      AppointmentHistory[]
 
+  @@index([clinicId, scheduledAt])
+  @@index([clinicId, status])
   @@map("appointments")
 }
 
@@ -389,6 +395,7 @@ model AppointmentHistory {
 
   appointment   Appointment @relation(fields: [appointmentId], references: [id])
 
+  @@index([appointmentId, createdAt])
   @@map("appointment_history")
 }
 
@@ -411,6 +418,8 @@ model ClinicContact {
   conversations Conversation[]
   appointments  Appointment[]
 
+  @@index([clinicId, phone])
+  @@index([clinicId, instagramUser])
   @@map("clinic_contacts")
 }
 
@@ -434,6 +443,9 @@ model Conversation {
   metricsEvents   MetricsEvent[]
   metadata        Json?          @default("{}")
 
+  @@index([clinicId, status])
+  @@index([contactId])
+  @@index([clinicId, startedAt])
   @@map("conversations")
 }
 
@@ -449,6 +461,7 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id])
   clinic         Clinic       @relation(fields: [clinicId], references: [id])
 
+  @@index([conversationId, sentAt])
   @@map("messages")
 }
 
@@ -462,6 +475,7 @@ model PatientSession {
   clinic       Clinic       @relation(fields: [clinicId], references: [id])
   conversation Conversation @relation(fields: [conversationId], references: [id])
 
+  @@index([expiresAt])
   @@map("patient_sessions")
 }
 
@@ -479,6 +493,8 @@ model MetricsEvent {
   clinic       Clinic       @relation(fields: [clinicId], references: [id])
   conversation Conversation? @relation(fields: [conversationId], references: [id])
 
+  @@index([clinicId, eventType, createdAt])
+  @@index([clinicId, hourOfDay])
   @@map("metrics_events")
 }
 
@@ -520,5 +536,6 @@ model ClinicKnowledgeOverride {
 
   clinic           Clinic   @relation(fields: [clinicId], references: [id])
 
+  @@index([clinicId, active])
   @@map("clinic_knowledge_overrides")
 }
