@@ -107,6 +107,7 @@ export class AgentController {
       userInput: message,
       currentStep: conversation.currentStep || 'inicio',
       metadata: conversation.metadata || {},
+      simulate: true,
     });
 
     // 4. Save agent response to BDD
@@ -123,7 +124,10 @@ export class AgentController {
     return {
       session_id: conversation.id,
       response: response.text,
-      tools_used: [],
+      current_step: response.currentStep,
+      intention: response.intent,
+      certainty: response.certainty,
+      tools_used: response.toolsUsed,
     };
   }
 }

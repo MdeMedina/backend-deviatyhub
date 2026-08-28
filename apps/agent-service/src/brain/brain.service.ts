@@ -46,7 +46,8 @@ export class BrainService {
     userInput: string;
     currentStep: string;
     metadata: any;
-  }): Promise<{ text: string; nextStep?: string }> {
+    simulate?: boolean;
+  }): Promise<{ text: string; currentStep: string; intent: string; certainty: number; toolsUsed: string[] }> {
     const nowLocal = new Date();
     const currentDate = format(nowLocal, 'yyyy-MM-dd');
     const currentTime = format(nowLocal, 'HH:mm');
@@ -79,13 +80,25 @@ export class BrainService {
       const retryCount = (params.metadata?.retry_count || 0) + 1;
       if (retryCount >= 2) {
         await this.humanTool.escalate(params.conversationId, 'Baja confianza en intención persistente');
-        return { text: 'No te entiendo muy bien, te voy a derivar con uno de nuestros asesores.' };
+        return {
+          text: 'No te entiendo muy bien, te voy a derivar con uno de nuestros asesores.',
+          currentStep: 'human_takeover',
+          intent: classification.intent,
+          certainty: classification.confidence,
+          toolsUsed: ['escalate_to_human'],
+        };
       }
       await this.prisma.conversation.update({
         where: { id: params.conversationId },
         data: { metadata: { ...params.metadata, retry_count: retryCount } }
       });
-      return { text: 'Disculpa, no entendí del todo tu solicitud. ¿Podrías explicármelo de otra forma?' };
+      return {
+        text: 'Disculpa, no entendí del todo tu solicitud. ¿Podrías explicármelo de otra forma?',
+        currentStep: params.currentStep,
+        intent: classification.intent,
+        certainty: classification.confidence,
+        toolsUsed: [],
+      };
     }
 
     // 3. Definir HERRAMIENTAS para el Agente
@@ -163,7 +176,10 @@ export class BrainService {
         }),
         func: async ({ appointment_id, reason }) => {
           try {
-            await this.actionsTool.cancelAppointment(params.clinicId, appointment_id, reason);
+            if (params.simulate) {
+              return '[SIMULADO] La cita se habría cancelado (no se ejecuta en el simulador).';
+            }
+            await this.actionsTool.cancelAppointment(params.clinicId, appointment_id, reason, params.conversationId);
             return 'La cita ha sido cancelada exitosamente en el sistema.';
           } catch (e) {
             await this.humanTool.escalate(
@@ -185,6 +201,9 @@ export class BrainService {
         }),
         func: async ({ appointment_id, new_date, new_time, reason }) => {
           try {
+            if (params.simulate) {
+              return `[SIMULADO] La cita se habría reprogramado al ${new_date} ${new_time} (no se ejecuta en el simulador).`;
+            }
             const [year, month, day] = new_date.split('-').map(Number);
             const [hour, minute] = new_time.split(':').map(Number);
             const targetDate = new Date(year, month - 1, day, hour, minute, 0, 0);
@@ -193,7 +212,8 @@ export class BrainService {
               params.clinicId,
               appointment_id,
               targetDate,
-              reason
+              reason,
+              params.conversationId
             );
 
             if (!res.success) {
@@ -377,6 +397,7 @@ export class BrainService {
       agent,
       tools: tools as any[],
       verbose: true,
+      returnIntermediateSteps: true,
     });
 
     // 5. Ejecutar Agente
@@ -398,6 +419,12 @@ export class BrainService {
       currentDayOfWeek,
       bookingStateBlock,
     });
+
+    const toolsUsed: string[] = Array.isArray((response as any).intermediateSteps)
+      ? (response as any).intermediateSteps
+          .map((s: any) => s?.action?.tool)
+          .filter((t: any): t is string => typeof t === 'string')
+      : [];
 
     let replyText = response.output;
     let nextStepText = params.currentStep;
@@ -437,21 +464,134 @@ export class BrainService {
     }
 
     // 6. Post-procesamiento: Actualizar Estado si no hubo escalada
+    let finalStep: string = nextStepText;
     if (response.output !== 'ERROR_TECNICO_ESCALANDO_A_HUMANO') {
       const existingMetadataAfter = await this.prisma.conversation.findUnique({
         where: { id: params.conversationId }
       });
       const currentBooking = (existingMetadataAfter?.metadata as any)?.booking || {};
 
-      await this.stateManager.calculateNextStep(
+      const nextStep = await this.stateManager.calculateNextStep(
         params.conversationId,
         params.currentStep as ConversationStep,
         classification.intent,
         classification.confidence,
         currentBooking
       );
+      finalStep = nextStep;
+
+      // 7. Acción transaccional DETERMINISTA: solo al llegar a `listo_para_ejecucion`.
+      //    Implementa la regla crítica del doc: no se agenda hasta este estado.
+      if (nextStep === 'listo_para_ejecucion') {
+        if (params.simulate) {
+          replyText = `[SIMULADO] Tu cita quedó agendada para el ${currentBooking.fecha || ''} a las ${currentBooking.hora || ''}.`;
+          await this.prisma.conversation.update({
+            where: { id: params.conversationId },
+            data: { currentStep: 'concluido' },
+          });
+          finalStep = 'concluido';
+        } else {
+          try {
+            const scheduled = await this.executeScheduling(
+              params.clinicId,
+              params.conversationId,
+              params.contact,
+              currentBooking,
+            );
+            replyText = scheduled.reply;
+            if (scheduled.success) {
+              await this.prisma.conversation.update({
+                where: { id: params.conversationId },
+                data: { currentStep: 'concluido' },
+              });
+              finalStep = 'concluido';
+            }
+          } catch (e) {
+            this.logger.error(`Error al agendar la cita: ${(e as Error).message}`);
+            replyText = 'Tuvimos un problema al confirmar tu cita. Un asesor te contactará en breve.';
+            await this.humanTool.escalate(params.conversationId, `Error al agendar: ${(e as Error).message}`);
+            finalStep = 'human_takeover';
+          }
+        }
+      }
     }
 
-    return { text: replyText };
+    return {
+      text: replyText,
+      currentStep: finalStep,
+      intent: classification.intent,
+      certainty: classification.confidence,
+      toolsUsed,
+    };
+  }
+
+  private parseBookingDateTime(fecha?: string, hora?: string): Date | null {
+    if (!fecha || !hora) return null;
+    let y: number, m: number, d: number;
+    const dmy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(fecha.trim());
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha.trim());
+    if (dmy) { d = +dmy[1]; m = +dmy[2]; y = +dmy[3]; }
+    else if (ymd) { y = +ymd[1]; m = +ymd[2]; d = +ymd[3]; }
+    else return null;
+    const hm = /^(\d{1,2}):(\d{2})$/.exec(hora.trim());
+    if (!hm) return null;
+    const dt = new Date(y, m - 1, d, +hm[1], +hm[2], 0, 0);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  private async executeScheduling(
+    clinicId: string,
+    conversationId: string,
+    contact: any,
+    booking: any,
+  ): Promise<{ success: boolean; reply: string }> {
+    if (!booking?.procedimiento_id) {
+      return { success: false, reply: 'No pude identificar el tratamiento para agendar. ¿Cuál necesitas?' };
+    }
+
+    const treatment = await this.prisma.treatment.findFirst({
+      where: { id: booking.procedimiento_id, clinicId },
+      include: { doctors: { include: { doctor: true } } },
+    });
+    if (!treatment) {
+      return { success: false, reply: 'No pude encontrar ese tratamiento en el catálogo de la clínica.' };
+    }
+
+    let doctorId = treatment.doctors?.find((dt: any) => dt.doctor?.active !== false)?.doctorId;
+    if (!doctorId) {
+      const anyDoctor = await this.prisma.doctor.findFirst({ where: { clinicId, active: true } });
+      doctorId = anyDoctor?.id;
+    }
+    if (!doctorId) {
+      return { success: false, reply: 'No hay especialistas disponibles para agendar en este momento.' };
+    }
+
+    const scheduledAt = this.parseBookingDateTime(booking.fecha, booking.hora);
+    if (!scheduledAt) {
+      return { success: false, reply: 'La fecha u hora de la cita no son válidas. ¿Podrías confirmarlas?' };
+    }
+
+    const durationMin = (treatment as any).durationMin ?? treatment.durationAvgMin ?? 30;
+    const contactName =
+      [booking.Nombre, booking.Apellido].filter(Boolean).join(' ') || contact?.name || null;
+
+    const res = await this.actionsTool.scheduleAppointment(clinicId, {
+      conversationId,
+      contactId: contact?.id ?? null,
+      treatmentId: treatment.id,
+      doctorId,
+      scheduledAt,
+      durationMin,
+      contactName,
+    });
+
+    if (!res.success) {
+      return { success: false, reply: `Ese horario ya no está disponible. ¿Quieres que busque otro para ${treatment.name}?` };
+    }
+
+    return {
+      success: true,
+      reply: `¡Listo! Tu cita de ${treatment.name} quedó agendada para el ${booking.fecha} a las ${booking.hora}. Si necesitas modificarla o cancelarla, avísame.`,
+    };
   }
 }

@@ -1,20 +1,26 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '@deviaty/shared-prisma';
+import { EventBus, REDIS_CHANNELS } from '@deviaty/shared-events';
 
 @Injectable()
 export class AppointmentActionsTool {
   private readonly logger = new Logger(AppointmentActionsTool.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(EventBus)
+    private readonly eventBus: EventBus,
+  ) {}
 
   async searchActiveAppointments(clinicId: string, contactId: string) {
     this.logger.log(`Buscando citas activas para el contacto ${contactId} en clínica ${clinicId}`);
 
+    // Paridad con "Buscar_citas_activas_por_chat" de n8n: solo citas vigentes y futuras, máx. 5.
     const appointments = await this.prisma.appointment.findMany({
       where: {
         clinicId,
         contactId,
-        status: { notIn: ['CANCELLED', 'COMPLETED'] },
+        status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULED'] },
         scheduledAt: { gte: new Date() },
       },
       include: {
@@ -22,12 +28,87 @@ export class AppointmentActionsTool {
         doctor: true,
       },
       orderBy: { scheduledAt: 'asc' },
+      take: 5,
     });
 
     return appointments;
   }
 
-  async cancelAppointment(clinicId: string, appointmentId: string, reason?: string) {
+  /**
+   * Agenda una nueva cita (equivalente al Flujo 2 de n8n a nivel de BDD).
+   * Solo debe invocarse cuando la máquina de estados llega a `listo_para_ejecucion`.
+   */
+  async scheduleAppointment(
+    clinicId: string,
+    params: {
+      conversationId: string;
+      contactId?: string | null;
+      treatmentId: string;
+      doctorId: string;
+      scheduledAt: Date;
+      durationMin: number;
+      contactName?: string | null;
+    },
+  ): Promise<{ success: boolean; message?: string; appointment?: any }> {
+    this.logger.log(
+      `Agendando cita en clínica ${clinicId} para ${params.scheduledAt.toISOString()} (doctor ${params.doctorId})`,
+    );
+
+    // Evitar doble reserva del mismo especialista en el mismo horario
+    const overlap = await this.prisma.appointment.findFirst({
+      where: {
+        clinicId,
+        doctorId: params.doctorId,
+        status: { not: 'CANCELLED' },
+        scheduledAt: params.scheduledAt,
+      },
+    });
+    if (overlap) {
+      return { success: false, message: 'El horario ya se encuentra reservado para este especialista.' };
+    }
+
+    const appointment = await this.prisma.$transaction(async (tx) => {
+      const appt = await tx.appointment.create({
+        data: {
+          clinicId,
+          contactId: params.contactId ?? null,
+          treatmentId: params.treatmentId,
+          doctorId: params.doctorId,
+          conversationId: params.conversationId,
+          contactName: params.contactName ?? null,
+          scheduledAt: params.scheduledAt,
+          durationMin: params.durationMin,
+          status: 'CONFIRMED',
+          source: 'AGENT',
+        },
+      });
+
+      await tx.appointmentHistory.create({
+        data: {
+          appointmentId: appt.id,
+          event: 'created',
+          payload: { by: 'agent' },
+        },
+      });
+
+      return appt;
+    });
+
+    await this.eventBus.publish(REDIS_CHANNELS.APPOINTMENT_SCHEDULED, {
+      appointmentId: appointment.id,
+      clinicId,
+      conversationId: params.conversationId,
+    });
+
+    return { success: true, appointment };
+  }
+
+  async cancelAppointment(
+    clinicId: string,
+    appointmentId: string,
+    reason?: string,
+    conversationId?: string,
+  ) {
     this.logger.log(`Cancelando cita ${appointmentId} en clínica ${clinicId}`);
 
     const appointment = await this.prisma.appointment.findFirst({
@@ -38,8 +119,8 @@ export class AppointmentActionsTool {
       throw new Error(`La cita con ID ${appointmentId} no existe en esta clínica.`);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.appointment.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.appointment.update({
         where: { id: appointmentId },
         data: {
           status: 'CANCELLED',
@@ -50,20 +131,29 @@ export class AppointmentActionsTool {
       await tx.appointmentHistory.create({
         data: {
           appointmentId,
-          event: 'status_changed_cancelled',
-          payload: { reason, updatedBy: 'AGENT' },
+          event: 'cancelled',
+          payload: { reason, by: 'agent' },
         },
       });
 
-      return updated;
+      return res;
     });
+
+    await this.eventBus.publish(REDIS_CHANNELS.APPOINTMENT_CANCELLED, {
+      appointmentId,
+      clinicId,
+      conversationId: conversationId ?? appointment.conversationId ?? undefined,
+    });
+
+    return updated;
   }
 
   async rescheduleAppointment(
     clinicId: string,
     appointmentId: string,
     newDate: Date,
-    reason?: string
+    reason?: string,
+    conversationId?: string,
   ) {
     this.logger.log(
       `Reprogramando cita ${appointmentId} para la fecha ${newDate.toISOString()} en clínica ${clinicId}`
@@ -113,11 +203,18 @@ export class AppointmentActionsTool {
             old_date: appointment.scheduledAt,
             new_date: newDate,
             reason,
+            by: 'agent',
           },
         },
       });
 
       return res;
+    });
+
+    await this.eventBus.publish(REDIS_CHANNELS.APPOINTMENT_RESCHEDULED, {
+      appointmentId,
+      clinicId,
+      conversationId: conversationId ?? appointment.conversationId ?? undefined,
     });
 
     return { success: true, appointment: updated };
