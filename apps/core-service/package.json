@@ -12,6 +12,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@deviaty/shared-events": "^1.0.0",
     "@deviaty/shared-nestjs": "^1.0.0",
     "@deviaty/shared-prisma": "^1.0.0",
     "@deviaty/shared-types": "^1.0.0",
