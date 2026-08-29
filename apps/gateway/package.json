@@ -19,6 +19,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "date-fns": "^3.6.0",
     "@deviaty/shared-types": "^1.0.0",
     "@deviaty/shared-utils": "^1.0.0",
     "@fastify/reply-from": "^9.8.0",

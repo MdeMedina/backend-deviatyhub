@@ -9,6 +9,7 @@
     "verify": "tsx src/verify.ts"
   },
   "dependencies": {
+    "date-fns": "^3.6.0",
     "@deviaty/shared-events": "^1.0.0",
     "@deviaty/shared-prisma": "^1.0.0",
     "@deviaty/shared-utils": "^1.0.0",
