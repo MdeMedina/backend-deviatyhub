@@ -6,6 +6,7 @@ import {
   HttpExceptionFilter,
   AuditInterceptor,
 } from '@deviaty/shared-nestjs';
+import { SharedEventsModule } from '@deviaty/shared-events';
 import { PrismaModule } from './prisma/prisma.module';
 import { ClinicModule } from './clinic/clinic.module';
 import { DoctorModule } from './doctor/doctor.module';
@@ -18,7 +19,8 @@ import { MetricsModule } from './metrics/metrics.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-    }),
+    }) as any,
+    SharedEventsModule,
     PrismaModule,
     ClinicModule,
     DoctorModule,
@@ -30,10 +32,6 @@ import { MetricsModule } from './metrics/metrics.module';
   controllers: [],
   providers: [
     Reflector,
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: AuditInterceptor,
-    },
     {
       provide: APP_INTERCEPTOR,
       useClass: ApiResponseInterceptor,

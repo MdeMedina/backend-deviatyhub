@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit, Logger } from '@nestjs/common';
 import { RolesService } from './roles.service';
 import { RolesController } from './roles.controller';
 
@@ -7,4 +7,11 @@ import { RolesController } from './roles.controller';
   providers: [RolesService],
   exports: [RolesService],
 })
-export class RolesModule {}
+export class RolesModule implements OnModuleInit {
+  private readonly logger = new Logger(RolesModule.name);
+
+  onModuleInit() {
+    this.logger.log('RolesModule initialized');
+  }
+}
+

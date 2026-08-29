@@ -6,6 +6,7 @@ export interface ApiResponse<T> {
     meta?: any;
 }
 export declare class ApiResponseInterceptor<T> implements NestInterceptor<T, ApiResponse<T>> {
+    private readonly logger;
     intercept(context: ExecutionContext, next: CallHandler): Observable<ApiResponse<T>>;
 }
 //# sourceMappingURL=api-response.interceptor.d.ts.map

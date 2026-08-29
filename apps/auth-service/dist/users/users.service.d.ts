@@ -4,49 +4,50 @@ import { EventBus } from '@deviaty/shared-events';
 export declare class UsersService {
     private readonly prisma;
     private readonly eventBus;
+    private readonly logger;
     constructor(prisma: PrismaService, eventBus: EventBus);
     invite(clinicId: string, dto: InviteUserDto): Promise<{
         role: {
             id: string;
-            clinicId: string;
             createdAt: Date | null;
+            clinicId: string;
             name: string;
             isSuperadmin: boolean | null;
             permissions: import("@prisma/client/runtime/library").JsonValue;
         };
     } & {
-        email: string;
         id: string;
-        clinicId: string;
+        email: string;
         passwordHash: string | null;
         inviteToken: string | null;
         inviteExpires: Date | null;
-        roleId: string;
         active: boolean | null;
         createdAt: Date | null;
         updatedAt: Date | null;
+        clinicId: string;
+        roleId: string;
     }>;
     findAll(clinicId: string, page?: number, limit?: number): Promise<{
         data: ({
             role: {
                 id: string;
-                clinicId: string;
                 createdAt: Date | null;
+                clinicId: string;
                 name: string;
                 isSuperadmin: boolean | null;
                 permissions: import("@prisma/client/runtime/library").JsonValue;
             };
         } & {
-            email: string;
             id: string;
-            clinicId: string;
+            email: string;
             passwordHash: string | null;
             inviteToken: string | null;
             inviteExpires: Date | null;
-            roleId: string;
             active: boolean | null;
             createdAt: Date | null;
             updatedAt: Date | null;
+            clinicId: string;
+            roleId: string;
         })[];
         meta: {
             page: number;
@@ -58,56 +59,56 @@ export declare class UsersService {
     findOne(id: string, clinicId: string): Promise<{
         role: {
             id: string;
-            clinicId: string;
             createdAt: Date | null;
+            clinicId: string;
             name: string;
             isSuperadmin: boolean | null;
             permissions: import("@prisma/client/runtime/library").JsonValue;
         };
     } & {
-        email: string;
         id: string;
-        clinicId: string;
+        email: string;
         passwordHash: string | null;
         inviteToken: string | null;
         inviteExpires: Date | null;
-        roleId: string;
         active: boolean | null;
         createdAt: Date | null;
         updatedAt: Date | null;
+        clinicId: string;
+        roleId: string;
     }>;
     update(id: string, clinicId: string, dto: UpdateUserDto): Promise<{
         role: {
             id: string;
-            clinicId: string;
             createdAt: Date | null;
+            clinicId: string;
             name: string;
             isSuperadmin: boolean | null;
             permissions: import("@prisma/client/runtime/library").JsonValue;
         };
     } & {
-        email: string;
         id: string;
-        clinicId: string;
+        email: string;
         passwordHash: string | null;
         inviteToken: string | null;
         inviteExpires: Date | null;
-        roleId: string;
         active: boolean | null;
         createdAt: Date | null;
         updatedAt: Date | null;
+        clinicId: string;
+        roleId: string;
     }>;
     remove(id: string, clinicId: string): Promise<{
-        email: string;
         id: string;
-        clinicId: string;
+        email: string;
         passwordHash: string | null;
         inviteToken: string | null;
         inviteExpires: Date | null;
-        roleId: string;
         active: boolean | null;
         createdAt: Date | null;
         updatedAt: Date | null;
+        clinicId: string;
+        roleId: string;
     }>;
 }
 //# sourceMappingURL=users.service.d.ts.map

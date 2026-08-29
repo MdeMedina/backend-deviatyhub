@@ -22,6 +22,10 @@ export class UpdateUserDto {
   @IsBoolean()
   @IsOptional()
   active?: boolean;
+
+  @IsString()
+  @IsOptional()
+  password?: string;
 }
 
 export class SetPasswordDto {

@@ -3,12 +3,13 @@ import { RegisterDto, LoginDto, RefreshTokenDto } from './dto/auth.dto';
 import { SetPasswordDto } from '../users/dto/users.dto';
 export declare class AuthController {
     private readonly authService;
+    private readonly logger;
     constructor(authService: AuthService);
     register(registerDto: RegisterDto): Promise<{
-        email: string;
         id: string;
-        clinicId: string;
+        email: string;
         createdAt: Date | null;
+        clinicId: string;
     }>;
     login(loginDto: LoginDto): Promise<{
         access_token: string;

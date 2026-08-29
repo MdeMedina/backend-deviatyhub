@@ -153,6 +153,7 @@ model RefreshToken {
 
   user      User     @relation(fields: [userId], references: [id])
 
+  @@index([userId])
   @@map("refresh_tokens")
 }
 
@@ -196,6 +197,7 @@ model AuditLog {
   clinic    Clinic   @relation(fields: [clinicId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
 
+  @@index([clinicId, createdAt])
   @@map("audit_logs")
 }
 
@@ -208,6 +210,7 @@ model PlatformMetric {
 
   clinic     Clinic   @relation(fields: [clinicId], references: [id])
 
+  @@index([clinicId, metricType, recordedAt])
   @@map("platform_metrics")
 }
 
@@ -299,6 +302,14 @@ model Treatment {
   durationAvgMin  Int?     @map("duration_avg_min")
   encyclopediaRef String?  @map("encyclopedia_ref") @db.Uuid
   active          Boolean?  @default(true)
+  // Campos que la API/front usan directamente sobre el tratamiento
+  description     String?
+  durationMin     Int?      @map("duration_min")
+  price           Int?
+  priceIsapre     Int?      @map("price_isapre")
+  priceFonasa     Int?      @map("price_fonasa")
+  acceptsIsapre   Boolean?  @default(false) @map("accepts_isapre")
+  acceptsFonasa   Boolean?  @default(false) @map("accepts_fonasa")
   createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -307,6 +318,7 @@ model Treatment {
   offers       TreatmentOffer[]
   appointments Appointment[]
 
+  @@index([clinicId, active])
   @@map("treatments")
 }
 
@@ -328,8 +340,11 @@ model TreatmentOffer {
   clinicId    String   @map("clinic_id") @db.Uuid
   treatmentId String   @map("treatment_id") @db.Uuid
   label       String
-  price       Int
+  price       Int?
+  discountPct Int?      @map("discount_pct")
+  fixedPrice  Int?      @map("fixed_price")
   active      Boolean?  @default(true)
+  validFrom   DateTime? @map("valid_from") @db.Timestamptz
   validUntil  DateTime? @map("valid_until") @db.Timestamptz
   createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz
 
@@ -366,6 +381,8 @@ model Appointment {
   conversation Conversation? @relation(fields: [conversationId], references: [id])
   history      AppointmentHistory[]
 
+  @@index([clinicId, scheduledAt])
+  @@index([clinicId, status])
   @@map("appointments")
 }
 
@@ -378,6 +395,7 @@ model AppointmentHistory {
 
   appointment   Appointment @relation(fields: [appointmentId], references: [id])
 
+  @@index([appointmentId, createdAt])
   @@map("appointment_history")
 }
 
@@ -400,6 +418,8 @@ model ClinicContact {
   conversations Conversation[]
   appointments  Appointment[]
 
+  @@index([clinicId, phone])
+  @@index([clinicId, instagramUser])
   @@map("clinic_contacts")
 }
 
@@ -423,6 +443,9 @@ model Conversation {
   metricsEvents   MetricsEvent[]
   metadata        Json?          @default("{}")
 
+  @@index([clinicId, status])
+  @@index([contactId])
+  @@index([clinicId, startedAt])
   @@map("conversations")
 }
 
@@ -438,6 +461,7 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id])
   clinic         Clinic       @relation(fields: [clinicId], references: [id])
 
+  @@index([conversationId, sentAt])
   @@map("messages")
 }
 
@@ -451,6 +475,7 @@ model PatientSession {
   clinic       Clinic       @relation(fields: [clinicId], references: [id])
   conversation Conversation @relation(fields: [conversationId], references: [id])
 
+  @@index([expiresAt])
   @@map("patient_sessions")
 }
 
@@ -468,6 +493,8 @@ model MetricsEvent {
   clinic       Clinic       @relation(fields: [clinicId], references: [id])
   conversation Conversation? @relation(fields: [conversationId], references: [id])
 
+  @@index([clinicId, eventType, createdAt])
+  @@index([clinicId, hourOfDay])
   @@map("metrics_events")
 }
 
@@ -509,5 +536,6 @@ model ClinicKnowledgeOverride {
 
   clinic           Clinic   @relation(fields: [clinicId], references: [id])
 
+  @@index([clinicId, active])
   @@map("clinic_knowledge_overrides")
 }

@@ -6,6 +6,7 @@ const platform_fastify_1 = require("@nestjs/platform-fastify");
 const app_module_1 = require("./app.module");
 const shared_prisma_1 = require("@deviaty/shared-prisma");
 const config_1 = require("@nestjs/config");
+const conversation_gateway_1 = require("./conversation/conversation.gateway");
 const createMockFn = (returnValue) => {
     const fn = (...args) => {
         fn.mock.calls.push(args);
@@ -44,10 +45,16 @@ async function verifyCoreService() {
         $transaction: (cb) => cb(mockPrisma),
     };
     const mockConfig = { get: (k, d) => d };
+    const mockGateway = {
+        emitEvent: (event, payload) => {
+            console.log(`[Mock Gateway] Emitted ${event}:`, payload);
+        }
+    };
     try {
         const moduleFixture = await testing_1.Test.createTestingModule({ imports: [app_module_1.AppModule] })
             .overrideProvider(shared_prisma_1.PrismaService).useValue(mockPrisma)
             .overrideProvider(config_1.ConfigService).useValue(mockConfig)
+            .overrideProvider(conversation_gateway_1.ConversationGateway).useValue(mockGateway)
             .compile();
         app = moduleFixture.createNestApplication(new platform_fastify_1.FastifyAdapter());
         app.setGlobalPrefix('api');

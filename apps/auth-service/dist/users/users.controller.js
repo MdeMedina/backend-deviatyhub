@@ -11,30 +11,38 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var UsersController_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersController = void 0;
 const common_1 = require("@nestjs/common");
 const users_service_1 = require("./users.service");
 const users_dto_1 = require("./dto/users.dto");
 const auditable_decorator_1 = require("../common/decorators/auditable.decorator");
-let UsersController = class UsersController {
+let UsersController = UsersController_1 = class UsersController {
     usersService;
+    logger = new common_1.Logger(UsersController_1.name);
     constructor(usersService) {
         this.usersService = usersService;
+        this.logger.log('UsersController initialized');
     }
     invite(clinicId, inviteUserDto) {
+        this.logger.log(`Inviting user: ${inviteUserDto.email} for clinicId: ${clinicId}`);
         return this.usersService.invite(clinicId, inviteUserDto);
     }
     findAll(clinicId, page, limit) {
+        this.logger.log(`Fetching users for clinicId: ${clinicId} (page=${page}, limit=${limit})`);
         return this.usersService.findAll(clinicId, page, limit);
     }
     findOne(id, clinicId) {
+        this.logger.log(`Fetching user: ${id} for clinicId: ${clinicId}`);
         return this.usersService.findOne(id, clinicId);
     }
     update(id, clinicId, updateUserDto) {
+        this.logger.log(`Updating user: ${id} for clinicId: ${clinicId}`);
         return this.usersService.update(id, clinicId, updateUserDto);
     }
     remove(id, clinicId) {
+        this.logger.log(`Removing user: ${id} for clinicId: ${clinicId}`);
         return this.usersService.remove(id, clinicId);
     }
 };
@@ -84,7 +92,7 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "remove", null);
-exports.UsersController = UsersController = __decorate([
+exports.UsersController = UsersController = UsersController_1 = __decorate([
     (0, common_1.Controller)('auth/users'),
     __param(0, (0, common_1.Inject)(users_service_1.UsersService)),
     __metadata("design:paramtypes", [users_service_1.UsersService])

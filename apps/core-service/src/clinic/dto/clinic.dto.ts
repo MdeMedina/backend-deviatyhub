@@ -74,6 +74,10 @@ export class CreateUnavailabilityDto {
 
   @IsString()
   end_time!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }
 
 export class UpdateUnavailabilityDto {
@@ -105,6 +109,10 @@ export class CreatePolicyDto {
 
   @IsString()
   description!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }
 
 export class UpdatePolicyDto {

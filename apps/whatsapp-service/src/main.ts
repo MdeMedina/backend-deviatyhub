@@ -4,7 +4,8 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 import { EventBus } from '@deviaty/shared-events';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@deviaty/shared-prisma';
+import { decryptAES256 } from '@deviaty/shared-utils';
 import axios from 'axios';
 
 const prisma = new PrismaClient();
@@ -32,14 +33,58 @@ const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 async function sendToMeta(event: any) {
   const { recipient, content, conversationId, clinicId } = event;
 
-  if (!PHONE_NUMBER_ID || !ACCESS_TOKEN) {
-    console.warn('⚠️ WHATSAPP credentials missing. Skipping delivery.');
+  let phoneNumberId = PHONE_NUMBER_ID;
+  let accessToken = ACCESS_TOKEN;
+
+  if (clinicId) {
+    try {
+      const integration = await prisma.clinicIntegration.findFirst({
+        where: {
+          clinicId,
+          type: 'WHATSAPP',
+        },
+      });
+
+      if (integration && integration.credentials) {
+        const credsObj = integration.credentials as any;
+        if (credsObj.encrypted_data) {
+          const secretKey = process.env.JWT_ACCESS_SECRET;
+          if (!secretKey) throw new Error('JWT_ACCESS_SECRET no está configurado');
+          const decrypted = decryptAES256(credsObj.encrypted_data, secretKey);
+          const credentials = JSON.parse(decrypted);
+
+          if (credentials.phone_number_id) {
+            phoneNumberId = credentials.phone_number_id;
+          }
+          if (credentials.access_token) {
+            accessToken = credentials.access_token;
+          }
+        }
+      }
+    } catch (dbError: any) {
+      console.error(`⚠️ Error consultando BDD para cargar credenciales de WhatsApp: ${dbError.message}`);
+    }
+  }
+
+  if (!phoneNumberId || !accessToken) {
+    console.warn(`⚠️ WHATSAPP credentials missing for clinic ${clinicId}. Skipping delivery.`);
+    try {
+      await prisma.message.create({
+        data: {
+          conversationId,
+          clinicId,
+          role: 'SYSTEM',
+          content: 'Error de entrega: Credenciales de WhatsApp no configuradas.',
+          sentAt: new Date(),
+        },
+      });
+    } catch {}
     return;
   }
 
   try {
     await axios.post(
-      `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`,
+      `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
       {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
@@ -49,7 +94,7 @@ async function sendToMeta(event: any) {
       },
       {
         headers: {
-          Authorization: `Bearer ${ACCESS_TOKEN}`,
+          Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
       }
@@ -58,6 +103,17 @@ async function sendToMeta(event: any) {
   } catch (error: any) {
     const errorMsg = error.response?.data?.error?.message || error.message;
     console.error(`❌ Error enviando a ${recipient}: ${errorMsg}`);
+    try {
+      await prisma.message.create({
+        data: {
+          conversationId,
+          clinicId,
+          role: 'SYSTEM',
+          content: `Error de entrega: ${errorMsg}`,
+          sentAt: new Date(),
+        },
+      });
+    } catch {}
   }
 }
 

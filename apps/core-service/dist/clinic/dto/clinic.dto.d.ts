@@ -20,6 +20,7 @@ export declare class CreateUnavailabilityDto {
     days_of_week: number[];
     start_time: string;
     end_time: string;
+    active?: boolean;
 }
 export declare class UpdateUnavailabilityDto {
     name?: string;
@@ -31,6 +32,7 @@ export declare class UpdateUnavailabilityDto {
 export declare class CreatePolicyDto {
     title: string;
     description: string;
+    active?: boolean;
 }
 export declare class UpdatePolicyDto {
     title?: string;

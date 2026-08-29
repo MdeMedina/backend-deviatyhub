@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit, Logger } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 
@@ -7,4 +7,11 @@ import { UsersController } from './users.controller';
   providers: [UsersService],
   exports: [UsersService],
 })
-export class UsersModule {}
+export class UsersModule implements OnModuleInit {
+  private readonly logger = new Logger(UsersModule.name);
+
+  onModuleInit() {
+    this.logger.log('UsersModule initialized');
+  }
+}
+

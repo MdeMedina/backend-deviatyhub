@@ -11,17 +11,19 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var TreatmentService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TreatmentService = void 0;
 const common_1 = require("@nestjs/common");
 const shared_prisma_1 = require("@deviaty/shared-prisma");
-let TreatmentService = class TreatmentService {
+let TreatmentService = TreatmentService_1 = class TreatmentService {
     prisma;
+    logger = new common_1.Logger(TreatmentService_1.name);
     constructor(prisma) {
         this.prisma = prisma;
     }
     async findAll(clinicId, active) {
-        return this.prisma.treatment.findMany({
+        const treatments = await this.prisma.treatment.findMany({
             where: {
                 clinicId,
                 ...(active !== undefined ? { active } : {}),
@@ -38,6 +40,7 @@ let TreatmentService = class TreatmentService {
             },
             orderBy: { name: 'asc' },
         });
+        return Promise.all(treatments.map((t) => this.mapTreatmentToFrontend(t)));
     }
     async findOne(clinicId, id) {
         const treatment = await this.prisma.treatment.findFirst({
@@ -54,44 +57,86 @@ let TreatmentService = class TreatmentService {
         if (!treatment) {
             throw new common_1.NotFoundException('Tratamiento no encontrado');
         }
-        return treatment;
+        return this.mapTreatmentToFrontend(treatment);
     }
     async create(clinicId, dto) {
-        const { doctor_ids, ...data } = dto;
+        this.logger.log(`create - Creating treatment: "${dto.name}" under clinicId: ${clinicId}`);
+        const category = dto.category || 'General';
+        const durationAvgMin = dto.duration_avg_min ?? dto.duration_min ?? 15;
+        const encyclopediaRef = dto.encyclopedia_ref && dto.encyclopedia_ref.trim() !== ''
+            ? dto.encyclopedia_ref
+            : null;
+        let doctorIds = dto.doctor_ids || [];
+        if (dto.doctors && dto.doctors.length > 0) {
+            doctorIds = dto.doctors.map((d) => typeof d === 'string' ? d : d.id).filter(Boolean);
+        }
         return this.prisma.$transaction(async (tx) => {
             const treatment = await tx.treatment.create({
                 data: {
-                    ...data,
+                    name: dto.name,
+                    category,
+                    durationAvgMin,
+                    encyclopediaRef,
+                    active: dto.active ?? true,
                     clinicId,
                 },
             });
-            if (doctor_ids && doctor_ids.length > 0) {
+            if (doctorIds.length > 0) {
                 await tx.doctorTreatment.createMany({
-                    data: doctor_ids.map((doctorId) => ({
+                    data: doctorIds.map((doctorId) => ({
                         clinicId,
                         doctorId,
                         treatmentId: treatment.id,
                     })),
                 });
             }
+            // Crear oferta de tratamiento por defecto (Precio Base)
+            const price = dto.price ?? dto.price_isapre ?? dto.price_fonasa ?? 0;
+            await tx.treatmentOffer.create({
+                data: {
+                    clinicId,
+                    treatmentId: treatment.id,
+                    label: 'Precio Base',
+                    price: Math.round(price),
+                    active: true,
+                },
+            });
             return treatment;
         });
     }
     async update(clinicId, id, dto) {
-        const { doctor_ids, ...data } = dto;
+        this.logger.log(`update - Updating treatment: ${id} under clinicId: ${clinicId}`);
+        const durationAvgMin = dto.duration_avg_min ?? dto.duration_min;
+        let encyclopediaRef = undefined;
+        if (dto.encyclopedia_ref !== undefined) {
+            encyclopediaRef = dto.encyclopedia_ref && dto.encyclopedia_ref.trim() !== ''
+                ? dto.encyclopedia_ref
+                : null;
+        }
+        let doctorIds = dto.doctor_ids;
+        if (dto.doctors !== undefined) {
+            doctorIds = dto.doctors.map((d) => typeof d === 'string' ? d : d.id).filter(Boolean);
+        }
+        // Verificar existencia
         await this.findOne(clinicId, id);
         return this.prisma.$transaction(async (tx) => {
             const treatment = await tx.treatment.update({
                 where: { id },
-                data,
+                data: {
+                    ...(dto.name !== undefined ? { name: dto.name } : {}),
+                    ...(dto.category !== undefined ? { category: dto.category } : {}),
+                    ...(durationAvgMin !== undefined ? { durationAvgMin } : {}),
+                    ...(encyclopediaRef !== undefined ? { encyclopediaRef } : {}),
+                    ...(dto.active !== undefined ? { active: dto.active } : {}),
+                },
             });
-            if (doctor_ids !== undefined) {
+            if (doctorIds !== undefined) {
                 await tx.doctorTreatment.deleteMany({
                     where: { treatmentId: id },
                 });
-                if (doctor_ids.length > 0) {
+                if (doctorIds.length > 0) {
                     await tx.doctorTreatment.createMany({
-                        data: doctor_ids.map((dId) => ({
+                        data: doctorIds.map((dId) => ({
                             clinicId,
                             doctorId: dId,
                             treatmentId: id,
@@ -99,26 +144,122 @@ let TreatmentService = class TreatmentService {
                     });
                 }
             }
+            // Crear/actualizar la oferta del precio base
+            const price = dto.price ?? dto.price_isapre ?? dto.price_fonasa;
+            if (price !== undefined) {
+                const existingOffer = await tx.treatmentOffer.findFirst({
+                    where: { treatmentId: id, label: 'Precio Base', clinicId },
+                });
+                if (existingOffer) {
+                    await tx.treatmentOffer.update({
+                        where: { id: existingOffer.id },
+                        data: { price: Math.round(price) },
+                    });
+                }
+                else {
+                    await tx.treatmentOffer.create({
+                        data: {
+                            clinicId,
+                            treatmentId: id,
+                            label: 'Precio Base',
+                            price: Math.round(price),
+                            active: true,
+                        },
+                    });
+                }
+            }
             return treatment;
         });
     }
     async remove(clinicId, id) {
+        this.logger.log(`remove - Deactivating treatment: ${id} under clinicId: ${clinicId}`);
         await this.findOne(clinicId, id);
         return this.prisma.treatment.update({
             where: { id },
             data: { active: false },
         });
     }
+    mapOfferToFrontend(o, basePrice) {
+        const discount_pct = basePrice > 0 && o.price < basePrice
+            ? Math.round((1 - o.price / basePrice) * 100)
+            : 0;
+        return {
+            id: o.id,
+            label: o.label,
+            discount_pct,
+            fixed_price: o.price,
+            valid_from: o.createdAt ? o.createdAt.toISOString() : new Date().toISOString(),
+            valid_until: o.validUntil ? o.validUntil.toISOString() : '',
+            active: o.active ?? true,
+            price: o.price,
+        };
+    }
+    async mapTreatmentToFrontend(t) {
+        const baseOffer = t.offers?.find((o) => o.label === 'Precio Base') || t.offers?.[0];
+        const price = baseOffer ? baseOffer.price : 0;
+        let description = '';
+        if (t.encyclopediaRef) {
+            const entry = await this.prisma.dentalEntry.findUnique({
+                where: { id: t.encyclopediaRef },
+            });
+            if (entry) {
+                description = entry.description;
+            }
+        }
+        const doctors = t.doctors
+            ?.filter((dt) => dt.doctor.active !== false)
+            ?.map((dt) => ({
+            id: dt.doctor.id,
+            name: dt.doctor.name,
+            title: dt.doctor.title,
+            specialty: dt.doctor.title,
+            active: dt.doctor.active,
+        })) || [];
+        const mappedOffers = t.offers?.map((o) => this.mapOfferToFrontend(o, price)) || [];
+        return {
+            id: t.id,
+            name: t.name,
+            category: t.category,
+            description,
+            duration_min: t.durationAvgMin || 15,
+            price,
+            price_isapre: price,
+            price_fonasa: price,
+            accepts_isapre: true,
+            accepts_fonasa: true,
+            active: t.active ?? true,
+            encyclopedia_ref: t.encyclopediaRef || '',
+            doctors,
+            offers: mappedOffers,
+        };
+    }
     // --- OFFERS ---
     async createOffer(clinicId, treatmentId, dto) {
-        await this.findOne(clinicId, treatmentId);
-        return this.prisma.treatmentOffer.create({
+        const treatment = await this.findOne(clinicId, treatmentId);
+        // Get base price from the base offer of the treatment
+        const baseOffer = treatment.offers?.find((o) => o.label === 'Precio Base') || treatment.offers?.[0];
+        const basePrice = baseOffer ? baseOffer.price : 0;
+        let computedPrice = 0;
+        if (dto.fixed_price !== undefined && dto.fixed_price > 0) {
+            computedPrice = dto.fixed_price;
+        }
+        else if (dto.discount_pct !== undefined && dto.discount_pct > 0) {
+            computedPrice = Math.round(basePrice * (1 - dto.discount_pct / 100));
+        }
+        else if (dto.price !== undefined) {
+            computedPrice = dto.price;
+        }
+        const offer = await this.prisma.treatmentOffer.create({
             data: {
-                ...dto,
+                label: dto.label,
+                price: Math.round(computedPrice),
+                active: dto.active ?? true,
+                validUntil: dto.valid_until ? new Date(dto.valid_until) : null,
                 treatmentId,
                 clinicId,
             },
         });
+        return this.mapOfferToFrontend(offer, basePrice);
     }
     async deleteOffer(clinicId, treatmentId, offerId) {
         const offer = await this.prisma.treatmentOffer.findFirst({
@@ -126,10 +267,14 @@ let TreatmentService = class TreatmentService {
         });
         if (!offer)
             throw new common_1.NotFoundException('Oferta no encontrada');
-        return this.prisma.treatmentOffer.update({
+        const updated = await this.prisma.treatmentOffer.update({
             where: { id: offerId },
             data: { active: false },
         });
+        const treatment = await this.findOne(clinicId, treatmentId);
+        const baseOffer = treatment.offers?.find((o) => o.label === 'Precio Base') || treatment.offers?.[0];
+        const basePrice = baseOffer ? baseOffer.price : 0;
+        return this.mapOfferToFrontend(updated, basePrice);
     }
     // --- ENCYCLOPEDIA ---
     async getEncyclopedia(category, search) {
@@ -142,7 +287,7 @@ let TreatmentService = class TreatmentService {
     }
 };
 exports.TreatmentService = TreatmentService;
-exports.TreatmentService = TreatmentService = __decorate([
+exports.TreatmentService = TreatmentService = TreatmentService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, common_1.Inject)(shared_prisma_1.PrismaService)),
     __metadata("design:paramtypes", [shared_prisma_1.PrismaService])

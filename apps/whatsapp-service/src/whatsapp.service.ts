@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { EVENT_BUS_TOKEN } from '@deviaty/shared-events';
+import { decryptAES256 } from '@deviaty/shared-utils';
 import axios from 'axios';
 
 @Injectable()
@@ -26,8 +27,37 @@ export class WhatsAppSenderService implements OnModuleInit {
 
   private async sendToMeta(event: any) {
     const { recipient, content, conversationId, clinicId } = event;
-    const phoneNumberId = this.configService.get('WHATSAPP_PHONE_NUMBER_ID');
-    const accessToken = this.configService.get('WHATSAPP_ACCESS_TOKEN');
+    let phoneNumberId = this.configService.get('WHATSAPP_PHONE_NUMBER_ID');
+    let accessToken = this.configService.get('WHATSAPP_ACCESS_TOKEN');
+
+    if (clinicId) {
+      try {
+        const integration = await this.prisma.clinicIntegration.findFirst({
+          where: {
+            clinicId,
+            type: 'WHATSAPP',
+          },
+        });
+
+        if (integration && integration.credentials) {
+          const credsObj = integration.credentials as any;
+          if (credsObj.encrypted_data) {
+            const secretKey = this.configService.getOrThrow<string>('JWT_ACCESS_SECRET');
+            const decrypted = decryptAES256(credsObj.encrypted_data, secretKey);
+            const credentials = JSON.parse(decrypted);
+
+            if (credentials.phone_number_id) {
+              phoneNumberId = credentials.phone_number_id;
+            }
+            if (credentials.access_token) {
+              accessToken = credentials.access_token;
+            }
+          }
+        }
+      } catch (dbError: any) {
+        this.logger.error(`Error consultando BDD para cargar credenciales de WhatsApp: ${dbError.message}`);
+      }
+    }
 
     if (!phoneNumberId || !accessToken) {
       await this.logFailure(conversationId, clinicId, content, 'MISSING_CREDENTIALS');

@@ -1,144 +1,73 @@
-import { PrismaService } from '@deviaty/shared-prisma';
+import { PrismaService } from "@deviaty/shared-prisma";
 import { CreateTreatmentDto, UpdateTreatmentDto, CreateOfferDto } from './dto/treatment.dto';
 export declare class TreatmentService {
     private readonly prisma;
+    private readonly logger;
     constructor(prisma: PrismaService);
-    findAll(clinicId: string, active?: boolean): Promise<({
-        doctors: ({
-            doctor: {
-                name: string;
-                id: string;
-                clinicId: string;
-                updatedAt: Date | null;
-                active: boolean | null;
-                createdAt: Date | null;
-                title: string;
-            };
-        } & {
-            id: string;
-            clinicId: string;
-            doctorId: string;
-            treatmentId: string;
-        })[];
-        offers: {
-            id: string;
-            clinicId: string;
-            active: boolean | null;
-            createdAt: Date | null;
-            treatmentId: string;
-            label: string;
-            price: number;
-            validUntil: Date | null;
-        }[];
-    } & {
-        name: string;
-        id: string;
-        clinicId: string;
-        updatedAt: Date | null;
-        active: boolean | null;
-        createdAt: Date | null;
-        category: string;
-        durationAvgMin: number | null;
-        encyclopediaRef: string | null;
-    })[]>;
-    findOne(clinicId: string, id: string): Promise<{
-        doctors: ({
-            doctor: {
-                name: string;
-                id: string;
-                clinicId: string;
-                updatedAt: Date | null;
-                active: boolean | null;
-                createdAt: Date | null;
-                title: string;
-            };
-        } & {
-            id: string;
-            clinicId: string;
-            doctorId: string;
-            treatmentId: string;
-        })[];
-        offers: {
-            id: string;
-            clinicId: string;
-            active: boolean | null;
-            createdAt: Date | null;
-            treatmentId: string;
-            label: string;
-            price: number;
-            validUntil: Date | null;
-        }[];
-    } & {
-        name: string;
-        id: string;
-        clinicId: string;
-        updatedAt: Date | null;
-        active: boolean | null;
-        createdAt: Date | null;
-        category: string;
-        durationAvgMin: number | null;
-        encyclopediaRef: string | null;
-    }>;
+    findAll(clinicId: string, active?: boolean): Promise<any[]>;
+    findOne(clinicId: string, id: string): Promise<any>;
     create(clinicId: string, dto: CreateTreatmentDto): Promise<{
-        name: string;
         id: string;
         clinicId: string;
-        updatedAt: Date | null;
-        active: boolean | null;
-        createdAt: Date | null;
+        name: string;
         category: string;
         durationAvgMin: number | null;
         encyclopediaRef: string | null;
+        active: boolean | null;
+        createdAt: Date | null;
+        updatedAt: Date | null;
     }>;
     update(clinicId: string, id: string, dto: UpdateTreatmentDto): Promise<{
-        name: string;
         id: string;
         clinicId: string;
-        updatedAt: Date | null;
-        active: boolean | null;
-        createdAt: Date | null;
+        name: string;
         category: string;
         durationAvgMin: number | null;
         encyclopediaRef: string | null;
+        active: boolean | null;
+        createdAt: Date | null;
+        updatedAt: Date | null;
     }>;
     remove(clinicId: string, id: string): Promise<{
-        name: string;
         id: string;
         clinicId: string;
-        updatedAt: Date | null;
-        active: boolean | null;
-        createdAt: Date | null;
+        name: string;
         category: string;
         durationAvgMin: number | null;
         encyclopediaRef: string | null;
-    }>;
-    createOffer(clinicId: string, treatmentId: string, dto: CreateOfferDto): Promise<{
-        id: string;
-        clinicId: string;
         active: boolean | null;
         createdAt: Date | null;
-        treatmentId: string;
-        label: string;
-        price: number;
-        validUntil: Date | null;
+        updatedAt: Date | null;
+    }>;
+    private mapOfferToFrontend;
+    private mapTreatmentToFrontend;
+    createOffer(clinicId: string, treatmentId: string, dto: CreateOfferDto): Promise<{
+        id: any;
+        label: any;
+        discount_pct: number;
+        fixed_price: any;
+        valid_from: any;
+        valid_until: any;
+        active: any;
+        price: any;
     }>;
     deleteOffer(clinicId: string, treatmentId: string, offerId: string): Promise<{
-        id: string;
-        clinicId: string;
-        active: boolean | null;
-        createdAt: Date | null;
-        treatmentId: string;
-        label: string;
-        price: number;
-        validUntil: Date | null;
+        id: any;
+        label: any;
+        discount_pct: number;
+        fixed_price: any;
+        valid_from: any;
+        valid_until: any;
+        active: any;
+        price: any;
     }>;
     getEncyclopedia(category?: string, search?: string): Promise<{
-        name: string;
         id: string;
-        updatedAt: Date | null;
-        description: string;
+        name: string;
         category: string;
         durationAvgMin: number | null;
+        updatedAt: Date | null;
+        description: string;
         procedure: string;
         indications: string[];
         contraindications: string[];

@@ -15,6 +15,17 @@ async function bootstrap() {
         transform: true,
         errorHttpStatusCode: 400,
     }));
+    // Hook para evitar error 400 de Fastify cuando viene Content-Type pero el body está vacío (ej. en peticiones DELETE/GET)
+    const fastifyInstance = app.getHttpAdapter().getInstance();
+    fastifyInstance.addHook('onRequest', (request, reply, done) => {
+        const method = request.raw.method;
+        const contentType = request.headers['content-type'];
+        const contentLength = request.headers['content-length'];
+        if (contentType && (contentLength === '0' || !contentLength || method === 'DELETE' || method === 'GET')) {
+            delete request.headers['content-type'];
+        }
+        done();
+    });
     const port = process.env.PORT || 3002;
     await app.listen(port, '0.0.0.0');
     console.log(`🏥 Core Service is running on: http://localhost:${port}`);

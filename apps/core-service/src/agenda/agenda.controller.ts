@@ -32,11 +32,11 @@ export class AgendaController {
   @Get('appointments')
   async findAll(
     @CurrentClinicId() clinicId: string,
-    @Query('from') from: string,
-    @Query('to') to: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
     @Query('doctor_id') doctorId?: string
   ) {
-    return this.agendaService.findAllAppointments(clinicId, from, to, doctorId);
+    return this.agendaService.findAllAppointments(clinicId, startDate, endDate, doctorId);
   }
 
   @Get('appointments/:id')

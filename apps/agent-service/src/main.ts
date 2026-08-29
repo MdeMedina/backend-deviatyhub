@@ -1,15 +1,33 @@
 import { NestFactory } from '@nestjs/core';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { Logger } from '@nestjs/common';
 
 async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(AppModule);
-  
+  const app = await (NestFactory.create as any)(
+    AppModule,
+    new FastifyAdapter(),
+  ) as NestFastifyApplication;
+
+  app.setGlobalPrefix('api');
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      errorHttpStatusCode: 400,
+    }),
+  );
+
   const logger = new Logger('Bootstrap');
-  logger.log('🤖 Agent Service (AmalIA) worker started and listening to "messages" queue');
-  
-  // Mantener el proceso vivo para el worker de BullMQ
-  // No necesitamos un servidor HTTP público (Gateway rutea pero este es un worker)
+  const port = process.env.PORT || 3003;
+  await app.listen(port, '0.0.0.0');
+
+  logger.log(`🤖 Agent Service (AmalIA) HTTP server is running on: http://localhost:${port}`);
 }
 
 bootstrap();

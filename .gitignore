@@ -1,1 +1,70 @@
-node_modules
+# ==========================================
+# DeviatyHub Backend - .gitignore
+# Monorepo: Turbo + NestJS + Prisma + TS
+# ==========================================
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build Outputs & Bundles
+dist/
+build/
+out/
+*.tsbuildinfo
+.turbo/
+
+# Environment & Secrets (Keep .env.example safe)
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.test
+
+# Logs & Debugging
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# NestJS / Framework Temp Files
+.clinic/
+.nest/
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Prisma / Database Local Artifacts
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Docker local overrides / artifacts
+docker-compose.override.yml
+
+# IDEs & System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor configurations
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~

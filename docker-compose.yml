@@ -1,6 +1,26 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-deviatyhub}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-deviatyhub}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - deviaty-net
+
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     networks:
@@ -10,6 +30,7 @@ services:
     build:
       context: .
       dockerfile: apps/gateway/Dockerfile
+    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
@@ -18,6 +39,7 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:3001
       - CORE_SERVICE_URL=http://core-service:3002
       - AGENT_SERVICE_URL=http://agent-service:3003
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
     depends_on:
       - redis
     networks:
@@ -27,15 +49,20 @@ services:
     build:
       context: .
       dockerfile: apps/auth-service/Dockerfile
+    restart: unless-stopped
     ports:
       - "3001:3001"
     environment:
       - PORT=3001
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - deviaty-net
 
@@ -43,14 +70,20 @@ services:
     build:
       context: .
       dockerfile: apps/core-service/Dockerfile
+    restart: unless-stopped
     ports:
       - "3002:3002"
     environment:
       - PORT=3002
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
+      - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - deviaty-net
 
@@ -58,6 +91,7 @@ services:
     build:
       context: .
       dockerfile: apps/agent-service/Dockerfile
+    restart: unless-stopped
     ports:
       - "3003:3003"
     environment:
@@ -66,7 +100,10 @@ services:
       - REDIS_URL=redis://redis:6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - deviaty-net
 
@@ -74,6 +111,7 @@ services:
     build:
       context: .
       dockerfile: apps/notification-service/Dockerfile
+    restart: unless-stopped
     ports:
       - "3004:3004"
     environment:
@@ -90,12 +128,14 @@ services:
     build:
       context: .
       dockerfile: apps/webhook-service/Dockerfile
+    restart: unless-stopped
     ports:
       - "3005:3005"
     environment:
       - PORT=3005
       - REDIS_URL=redis://redis:6379
       - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN}
+      - WHATSAPP_WEBHOOK_SECRET=${WHATSAPP_WEBHOOK_SECRET}
     depends_on:
       - redis
     networks:
@@ -105,19 +145,41 @@ services:
     build:
       context: .
       dockerfile: apps/whatsapp-service/Dockerfile
+    restart: unless-stopped
     ports:
       - "3006:3006"
     environment:
       - PORT=3006
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
       - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
       - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - deviaty-net
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - gateway
+      - core-service
+      - webhook-service
     networks:
       - deviaty-net
 
 networks:
   deviaty-net:
     driver: bridge
+
+volumes:
+  pgdata:

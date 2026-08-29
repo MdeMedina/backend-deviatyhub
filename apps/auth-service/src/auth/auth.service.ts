@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, Inject, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, Inject, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
@@ -10,6 +10,7 @@ import { REDIS_CHANNELS, EventBus } from '@deviaty/shared-events';
 export class AuthService {
   private readonly accessSecret: string;
   private readonly refreshSecret: string;
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     @Inject(PrismaService)
@@ -19,17 +20,21 @@ export class AuthService {
     @Inject('EVENT_BUS')
     private eventBus: EventBus,
   ) {
-    this.accessSecret = this.config.get<string>('JWT_ACCESS_SECRET', 'dev-access-secret')!;
-    this.refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET', 'dev-refresh-secret')!;
+    this.accessSecret = this.config.getOrThrow<string>('JWT_ACCESS_SECRET');
+    this.refreshSecret = this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
+    this.logger.log('AuthService initialized');
   }
 
+
   async register(dto: RegisterDto) {
+    this.logger.log(`register - Attempting to register email: ${dto.email}`);
     // 1. Verificar si el usuario ya existe
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
     if (existingUser) {
+      this.logger.warn(`register - Email: ${dto.email} is already registered`);
       throw new ConflictException('El correo ya está registrado');
     }
 
@@ -52,6 +57,7 @@ export class AuthService {
       },
     });
 
+    this.logger.log(`register - User: ${user.id} registered successfully. Publishing USER_CREATED event.`);
     // 4. Publicar evento
     await this.eventBus.publish(REDIS_CHANNELS.USER_CREATED, {
       userId: user.id,
@@ -63,6 +69,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    this.logger.log(`login - Attempting login for email: ${dto.email}`);
     // 1. Buscar usuario
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -70,12 +77,14 @@ export class AuthService {
     });
 
     if (!user || !user.passwordHash) {
+      this.logger.warn(`login - User not found or no password hash for email: ${dto.email}`);
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
     // 2. Verificar password
     const passwordValid = await compareBcrypt(dto.password, user.passwordHash);
     if (!passwordValid) {
+      this.logger.warn(`login - Invalid password for email: ${dto.email}`);
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
@@ -102,6 +111,7 @@ export class AuthService {
       },
     });
 
+    this.logger.log(`login - Successful login for user: ${user.id} in clinicId: ${user.clinicId}`);
     return {
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -121,22 +131,24 @@ export class AuthService {
   }
 
   async logout(accessToken: string, refreshToken: string) {
+    this.logger.log('logout - Requesting logout');
     // 1. Blacklist Access Token (prefijo blacklist:at:)
-    // Decodificar para obtener el JTI (o usar el token completo como key)
     try {
       const decoded = verifyJWT<any>(accessToken, this.accessSecret);
       const ttl = Math.floor((decoded.exp * 1000 - Date.now()) / 1000);
       if (ttl > 0) {
+        this.logger.log(`logout - Blacklisting access token for ${ttl}s`);
         await this.eventBus.setKey(`blacklist:at:${accessToken}`, 'true', ttl);
       }
     } catch (e) {
-      // Token inválido o ya expirado, no importa
+      this.logger.warn('logout - Access token validation failed or expired during logout');
     }
 
     // 2. Revocar Refresh Token en DB
+    this.logger.log('logout - Revoking active refresh tokens in database');
     await this.prisma.refreshToken.updateMany({
       where: {
-        tokenHash: { not: '' }, // placeholder to match all, then find by bcrypt
+        tokenHash: { not: '' },
         revokedAt: null,
       },
       data: { revokedAt: new Date() },
@@ -144,7 +156,9 @@ export class AuthService {
   }
 
   async setPassword(dto: any) {
+    this.logger.log('setPassword - Setting password via invite token');
     if (dto.password !== dto.password_confirm) {
+      this.logger.warn('setPassword - Passwords mismatch');
       throw new BadRequestException('PASSWORDS_DO_NOT_MATCH');
     }
 
@@ -153,10 +167,12 @@ export class AuthService {
     });
 
     if (!user) {
+      this.logger.warn('setPassword - Invite token not found');
       throw new BadRequestException('TOKEN_NOT_FOUND');
     }
 
     if (user.inviteExpires && user.inviteExpires < new Date()) {
+      this.logger.warn(`setPassword - Invite token expired for user: ${user.id}`);
       throw new BadRequestException('TOKEN_EXPIRED');
     }
 
@@ -171,16 +187,21 @@ export class AuthService {
       },
     });
 
+    this.logger.log(`setPassword - Password established successfully for user: ${user.id}`);
     return { message: 'Contraseña establecida correctamente' };
   }
 
   async getMe(userId: string) {
+    this.logger.log(`getMe - Fetching user context for userId: ${userId}`);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { role: true },
     });
 
-    if (!user) throw new UnauthorizedException();
+    if (!user) {
+      this.logger.warn(`getMe - User: ${userId} not found`);
+      throw new UnauthorizedException();
+    }
 
     return {
       id: user.id,
@@ -197,11 +218,13 @@ export class AuthService {
   }
 
   async refreshTokens(refreshToken: string) {
+    this.logger.log('refreshTokens - Attempting to refresh tokens');
     // 1. Verificar firma del Refresh Token
     let decoded: { userId: string };
     try {
       decoded = verifyJWT<{ userId: string }>(refreshToken, this.refreshSecret);
     } catch (e) {
+      this.logger.warn('refreshTokens - Invalid refresh token signature or expired');
       throw new UnauthorizedException('Refresh Token inválido o expirado');
     }
 
@@ -220,6 +243,7 @@ export class AuthService {
     }
 
     if (!dbToken || dbToken.expiresAt < new Date()) {
+      this.logger.warn(`refreshTokens - Token mismatch or expired in database for user: ${decoded.userId}`);
       throw new UnauthorizedException('Refresh Token no encontrado o expirado');
     }
 
@@ -235,7 +259,10 @@ export class AuthService {
       include: { role: true },
     });
 
-    if (!user) throw new UnauthorizedException('Usuario no encontrado');
+    if (!user) {
+      this.logger.warn(`refreshTokens - User ${decoded.userId} not found`);
+      throw new UnauthorizedException('Usuario no encontrado');
+    }
 
     const payload: IJwtPayload = {
       userId: user.id,
@@ -258,6 +285,7 @@ export class AuthService {
       },
     });
 
+    this.logger.log(`refreshTokens - Tokens refreshed successfully for user: ${user.id}`);
     return {
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,

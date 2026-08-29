@@ -44,25 +44,31 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var UsersService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
 const shared_prisma_1 = require("@deviaty/shared-prisma");
 const shared_events_1 = require("@deviaty/shared-events");
+const shared_utils_1 = require("@deviaty/shared-utils");
 const crypto = __importStar(require("crypto"));
-let UsersService = class UsersService {
+let UsersService = UsersService_1 = class UsersService {
     prisma;
     eventBus;
+    logger = new common_1.Logger(UsersService_1.name);
     constructor(prisma, eventBus) {
         this.prisma = prisma;
         this.eventBus = eventBus;
+        this.logger.log('UsersService initialized');
     }
     async invite(clinicId, dto) {
+        this.logger.log(`invite - clinicId: ${clinicId}, email: ${dto.email}, roleId: ${dto.roleId}`);
         // 1. Verificar si ya existe
         const existing = await this.prisma.user.findUnique({
             where: { email: dto.email },
         });
         if (existing) {
+            this.logger.warn(`invite - User email: ${dto.email} is already registered`);
             throw new common_1.ConflictException('El correo ya está registrado');
         }
         // 2. Generar token de invitación
@@ -81,6 +87,7 @@ let UsersService = class UsersService {
             },
             include: { role: true },
         });
+        this.logger.log(`invite - User: ${user.id} created, publishing USER_INVITED event`);
         // 4. Publicar evento para el Notification Service
         await this.eventBus.publish(shared_events_1.REDIS_CHANNELS.USER_INVITED, {
             userId: user.id,
@@ -91,13 +98,22 @@ let UsersService = class UsersService {
         return user;
     }
     async findAll(clinicId, page = 1, limit = 20) {
-        const skip = (page - 1) * limit;
+        let activePage = Number(page);
+        let activeLimit = Number(limit);
+        if (isNaN(activePage) || activePage < 1) {
+            activePage = 1;
+        }
+        if (isNaN(activeLimit) || activeLimit < 1) {
+            activeLimit = 20;
+        }
+        this.logger.log(`findAll - clinicId: ${clinicId}, page: ${activePage}, limit: ${activeLimit}`);
+        const skip = (activePage - 1) * activeLimit;
         const [users, total] = await Promise.all([
             this.prisma.user.findMany({
                 where: { clinicId },
                 include: { role: true },
                 skip,
-                take: Number(limit),
+                take: activeLimit,
                 orderBy: { createdAt: 'desc' },
             }),
             this.prisma.user.count({ where: { clinicId } }),
@@ -113,22 +129,32 @@ let UsersService = class UsersService {
         };
     }
     async findOne(id, clinicId) {
+        this.logger.log(`findOne - userId: ${id}, clinicId: ${clinicId}`);
         const user = await this.prisma.user.findFirst({
             where: { id, clinicId },
             include: { role: true },
         });
-        if (!user)
+        if (!user) {
+            this.logger.warn(`findOne - User: ${id} not found in clinicId: ${clinicId}`);
             throw new common_1.NotFoundException('Usuario no encontrado');
+        }
         return user;
     }
     async update(id, clinicId, dto) {
+        this.logger.log(`update - userId: ${id}, clinicId: ${clinicId}`);
+        const { password, ...rest } = dto;
+        const updateData = { ...rest };
+        if (password) {
+            updateData.passwordHash = await (0, shared_utils_1.hashBcrypt)(password);
+        }
         return this.prisma.user.update({
             where: { id, clinicId },
-            data: dto,
+            data: updateData,
             include: { role: true },
         });
     }
     async remove(id, clinicId) {
+        this.logger.log(`remove - userId: ${id}, clinicId: ${clinicId}`);
         return this.prisma.user.update({
             where: { id, clinicId },
             data: { active: false },
@@ -136,7 +162,7 @@ let UsersService = class UsersService {
     }
 };
 exports.UsersService = UsersService;
-exports.UsersService = UsersService = __decorate([
+exports.UsersService = UsersService = UsersService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, common_1.Inject)(shared_prisma_1.PrismaService)),
     __param(1, (0, common_1.Inject)('EVENT_BUS')),

@@ -11,27 +11,34 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var RolesController_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RolesController = void 0;
 const common_1 = require("@nestjs/common");
 const roles_service_1 = require("./roles.service");
 const roles_dto_1 = require("./dto/roles.dto");
 const auditable_decorator_1 = require("../common/decorators/auditable.decorator");
-let RolesController = class RolesController {
+let RolesController = RolesController_1 = class RolesController {
     rolesService;
+    logger = new common_1.Logger(RolesController_1.name);
     constructor(rolesService) {
         this.rolesService = rolesService;
+        this.logger.log('RolesController initialized');
     }
     create(clinicId, isSuperadmin, createRoleDto) {
+        this.logger.log(`Creating role: "${createRoleDto.name}" for clinicId: ${clinicId}`);
         return this.rolesService.createRole(clinicId, createRoleDto, isSuperadmin === 'true');
     }
     findAll(clinicId) {
+        this.logger.log(`Fetching all roles for clinicId: ${clinicId}`);
         return this.rolesService.findRolesByClinic(clinicId);
     }
     update(id, clinicId, updatePermissionsDto) {
+        this.logger.log(`Updating permissions for role: ${id} under clinicId: ${clinicId}`);
         return this.rolesService.updatePermissions(id, clinicId, updatePermissionsDto);
     }
     remove(id, clinicId) {
+        this.logger.log(`Deleting role: ${id} under clinicId: ${clinicId}`);
         return this.rolesService.deleteRole(id, clinicId);
     }
 };
@@ -72,8 +79,8 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], RolesController.prototype, "remove", null);
-exports.RolesController = RolesController = __decorate([
-    (0, common_1.Controller)('roles'),
+exports.RolesController = RolesController = RolesController_1 = __decorate([
+    (0, common_1.Controller)('auth/roles'),
     __param(0, (0, common_1.Inject)(roles_service_1.RolesService)),
     __metadata("design:paramtypes", [roles_service_1.RolesService])
 ], RolesController);

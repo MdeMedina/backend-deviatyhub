@@ -2,89 +2,51 @@ import { DoctorService } from './doctor.service';
 import { CreateDoctorDto, UpdateDoctorDto } from './dto/doctor.dto';
 export declare class DoctorController {
     private readonly doctorService;
+    private readonly logger;
     constructor(doctorService: DoctorService);
-    findAll(clinicId: string, active?: string): Promise<({
-        treatments: ({
-            treatment: {
-                name: string;
-                id: string;
-                clinicId: string;
-                updatedAt: Date | null;
-                active: boolean | null;
-                createdAt: Date | null;
-                category: string;
-                durationAvgMin: number | null;
-                encyclopediaRef: string | null;
-            };
-        } & {
-            id: string;
-            clinicId: string;
-            doctorId: string;
-            treatmentId: string;
-        })[];
-    } & {
-        name: string;
-        id: string;
-        clinicId: string;
-        updatedAt: Date | null;
-        active: boolean | null;
-        createdAt: Date | null;
-        title: string;
-    })[]>;
+    findAll(clinicId: string, active?: string): Promise<{
+        id: any;
+        name: any;
+        title: any;
+        active: any;
+        treatments: any;
+    }[]>;
     findOne(clinicId: string, id: string): Promise<{
-        treatments: ({
-            treatment: {
-                name: string;
-                id: string;
-                clinicId: string;
-                updatedAt: Date | null;
-                active: boolean | null;
-                createdAt: Date | null;
-                category: string;
-                durationAvgMin: number | null;
-                encyclopediaRef: string | null;
-            };
-        } & {
-            id: string;
-            clinicId: string;
-            doctorId: string;
-            treatmentId: string;
-        })[];
-    } & {
-        name: string;
-        id: string;
-        clinicId: string;
-        updatedAt: Date | null;
-        active: boolean | null;
-        createdAt: Date | null;
-        title: string;
+        id: any;
+        name: any;
+        title: any;
+        active: any;
+        treatments: any;
     }>;
     create(clinicId: string, dto: CreateDoctorDto): Promise<{
-        name: string;
-        id: string;
-        clinicId: string;
-        updatedAt: Date | null;
-        active: boolean | null;
-        createdAt: Date | null;
-        title: string;
+        id: any;
+        name: any;
+        title: any;
+        active: any;
+        treatments: any;
     }>;
     update(clinicId: string, id: string, dto: UpdateDoctorDto): Promise<{
-        name: string;
-        id: string;
-        clinicId: string;
-        updatedAt: Date | null;
-        active: boolean | null;
-        createdAt: Date | null;
-        title: string;
+        id: any;
+        name: any;
+        title: any;
+        active: any;
+        treatments: any;
+    }>;
+    updatePut(clinicId: string, id: string, dto: UpdateDoctorDto): Promise<{
+        id: any;
+        name: any;
+        title: any;
+        active: any;
+        treatments: any;
     }>;
     remove(clinicId: string, id: string): Promise<{
-        name: string;
         id: string;
         clinicId: string;
-        updatedAt: Date | null;
+        name: string;
+        title: string;
         active: boolean | null;
         createdAt: Date | null;
-        title: string;
+        updatedAt: Date | null;
     }>;
 }
 //# sourceMappingURL=doctor.controller.d.ts.map

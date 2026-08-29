@@ -33,7 +33,7 @@ export class AgentProcessor extends WorkerHost {
         include: {
           contact: true,
           messages: {
-            orderBy: { createdAt: 'desc' },
+            orderBy: { sentAt: 'desc' },
             take: 10,
           },
         },
@@ -52,9 +52,10 @@ export class AgentProcessor extends WorkerHost {
 
       // 2. Ejecutar "Cerebro" (LLM)
       const response = await this.brain.processMessage({
+        conversationId: conversation_id,
         clinicId: clinic_id,
-        contact: conversation.contact,
-        history: conversation.messages.reverse(),
+        contact: conversation.contact as any,
+        history: (conversation as any).messages.reverse(),
         userInput: message.text || message.body,
         currentStep: conversation.currentStep || 'inicio',
         metadata: conversation.metadata || {},
@@ -75,7 +76,7 @@ export class AgentProcessor extends WorkerHost {
       await this.eventBus.publish('message.outbound', {
         conversationId: conversation_id,
         clinicId: clinic_id,
-        recipient: conversation.contact?.phone || '', // Si no hay teléfono, el service fallará (esperado)
+        recipient: (conversation.contact as any)?.phone || '', // Si no hay teléfono, el service fallará (esperado)
         content: response.text,
         channel: conversation.channel as any,
       });
@@ -83,7 +84,7 @@ export class AgentProcessor extends WorkerHost {
       this.logger.log(`Respuesta enviada y persistida para ${conversation_id}`);
 
     } catch (error) {
-      this.logger.error(`Error procesando mensaje: ${error.message}`);
+      this.logger.error(`Error procesando mensaje: ${(error as Error).message}`);
       throw error; // Para que BullMQ reintente según config
     }
   }

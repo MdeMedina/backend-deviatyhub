@@ -13,6 +13,10 @@ export class CreateDoctorDto {
   @IsUUID('4', { each: true, message: 'Los IDs de tratamientos deben ser UUID v4 válidos' })
   @IsOptional()
   treatment_ids?: string[];
+
+  @IsArray()
+  @IsOptional()
+  treatments?: any[];
 }
 
 export class UpdateDoctorDto {
@@ -28,6 +32,10 @@ export class UpdateDoctorDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   treatment_ids?: string[];
+
+  @IsArray()
+  @IsOptional()
+  treatments?: any[];
 
   @IsBoolean()
   @IsOptional()

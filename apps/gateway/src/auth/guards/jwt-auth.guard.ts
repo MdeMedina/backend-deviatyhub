@@ -35,7 +35,8 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       // 3. Verificar el token usando shared-utils
-      const secret = process.env.JWT_ACCESS_SECRET || 'secret';
+      const secret = process.env.JWT_ACCESS_SECRET;
+      if (!secret) throw new Error('JWT_ACCESS_SECRET no está configurado');
       const payload = verifyJWT<IJwtPayload>(token, secret);
 
       // 4. Adjuntar el payload al request para uso posterior (request.user)

@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -60,6 +61,16 @@ export class TreatmentController {
   @Patch(':id')
   @Auditable('treatment')
   async update(
+    @CurrentClinicId() clinicId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateTreatmentDto
+  ) {
+    return this.treatmentService.update(clinicId, id, dto);
+  }
+
+  @Put(':id')
+  @Auditable('treatment')
+  async updatePut(
     @CurrentClinicId() clinicId: string,
     @Param('id') id: string,
     @Body() dto: UpdateTreatmentDto

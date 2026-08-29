@@ -8,12 +8,13 @@ export declare class AuthService {
     private eventBus;
     private readonly accessSecret;
     private readonly refreshSecret;
+    private readonly logger;
     constructor(prisma: PrismaService, config: ConfigService, eventBus: EventBus);
     register(dto: RegisterDto): Promise<{
-        email: string;
         id: string;
-        clinicId: string;
+        email: string;
         createdAt: Date | null;
+        clinicId: string;
     }>;
     login(dto: LoginDto): Promise<{
         access_token: string;

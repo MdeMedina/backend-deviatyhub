@@ -1,12 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject } from '@nestjs/common';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { ConversationFilterDto } from './dto/conversation.dto';
+import { ConversationGateway } from './conversation.gateway';
 
 @Injectable()
 export class ConversationService {
   constructor(
     @Inject(PrismaService)
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    @Inject(ConversationGateway)
+    private readonly gateway: ConversationGateway
   ) {}
 
   async findAll(clinicId: string, filters: ConversationFilterDto) {
@@ -16,7 +19,7 @@ export class ConversationService {
     const where = {
       clinicId,
       ...(status ? { status: status as any } : {}),
-      ...(channel ? { channel } : {}),
+      ...(channel ? { channel } : { channel: { not: 'SIMULATOR' } }),
     };
 
     const [data, total] = await Promise.all([
@@ -72,25 +75,39 @@ export class ConversationService {
       return conversation; // Ya está en takeover
     }
 
-    return this.prisma.conversation.update({
+    const updated = await this.prisma.conversation.update({
       where: { id },
       data: {
         status: 'HUMAN_TAKEOVER',
         assignedUserId: userId,
       },
     });
+
+    this.gateway.emitEvent('conversation.status_changed', {
+      conversation_id: id,
+      status: 'HUMAN_TAKEOVER',
+    });
+
+    return updated;
   }
 
   async release(clinicId: string, id: string) {
     await this.findOne(clinicId, id);
 
-    return this.prisma.conversation.update({
+    const updated = await this.prisma.conversation.update({
       where: { id },
       data: {
         status: 'OPEN',
         assignedUserId: null,
       },
     });
+
+    this.gateway.emitEvent('conversation.status_changed', {
+      conversation_id: id,
+      status: 'OPEN',
+    });
+
+    return updated;
   }
 
   async sendManualMessage(clinicId: string, id: string, userId: string, content: string) {
@@ -100,7 +117,7 @@ export class ConversationService {
       throw new ForbiddenException('NOT_IN_TAKEOVER: La conversación debe estar en modo intervención humana');
     }
 
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: {
         clinicId,
         conversationId: id,
@@ -108,6 +125,13 @@ export class ConversationService {
         content,
       },
     });
+
+    this.gateway.emitEvent('conversation.message', {
+      conversation_id: id,
+      message,
+    });
+
+    return message;
   }
 
   async findContacts(clinicId: string, search?: string, page = 1, limit = 20) {

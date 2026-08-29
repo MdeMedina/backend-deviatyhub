@@ -24,24 +24,60 @@ let MetricsService = class MetricsService {
     async getSummary(clinicId, period) {
         const days = parseInt(period) || 7;
         const fromDate = (0, date_fns_1.subDays)(new Date(), days);
-        // 1. Contador de conversaciones y citas
+        // 1. Contador de conversaciones y citas (excluyendo simulador)
         const [convCount, appScheduled, appRescheduled, appCancelled] = await Promise.all([
             this.prisma.conversation.count({
-                where: { clinicId, startedAt: { gte: fromDate } },
+                where: {
+                    clinicId,
+                    startedAt: { gte: fromDate },
+                    channel: { not: 'SIMULATOR' }
+                },
             }),
             this.prisma.metricsEvent.count({
-                where: { clinicId, eventType: 'APPOINTMENT_SCHEDULED', createdAt: { gte: fromDate } },
+                where: {
+                    clinicId,
+                    eventType: 'APPOINTMENT_SCHEDULED',
+                    createdAt: { gte: fromDate },
+                    OR: [
+                        { conversationId: null },
+                        { conversation: { channel: { not: 'SIMULATOR' } } }
+                    ]
+                },
             }),
             this.prisma.metricsEvent.count({
-                where: { clinicId, eventType: 'APPOINTMENT_RESCHEDULED', createdAt: { gte: fromDate } },
+                where: {
+                    clinicId,
+                    eventType: 'APPOINTMENT_RESCHEDULED',
+                    createdAt: { gte: fromDate },
+                    OR: [
+                        { conversationId: null },
+                        { conversation: { channel: { not: 'SIMULATOR' } } }
+                    ]
+                },
             }),
             this.prisma.metricsEvent.count({
-                where: { clinicId, eventType: 'APPOINTMENT_CANCELLED', createdAt: { gte: fromDate } },
+                where: {
+                    clinicId,
+                    eventType: 'APPOINTMENT_CANCELLED',
+                    createdAt: { gte: fromDate },
+                    OR: [
+                        { conversationId: null },
+                        { conversation: { channel: { not: 'SIMULATOR' } } }
+                    ]
+                },
             }),
         ]);
         // 2. Containment Rate (Porcentaje de conversaciones cerradas sin haber pasado por takeover)
         const takeovers = await this.prisma.metricsEvent.count({
-            where: { clinicId, eventType: 'HUMAN_TAKEOVER', createdAt: { gte: fromDate } }
+            where: {
+                clinicId,
+                eventType: 'HUMAN_TAKEOVER',
+                createdAt: { gte: fromDate },
+                OR: [
+                    { conversationId: null },
+                    { conversation: { channel: { not: 'SIMULATOR' } } }
+                ]
+            }
         });
         const containmentRate = convCount > 0 ? (convCount - takeovers) / convCount : 1;
         // 3. Distribución de intenciones
@@ -52,6 +88,10 @@ let MetricsService = class MetricsService {
                 eventType: 'INTENTION_DETECTED',
                 createdAt: { gte: fromDate },
                 intention: { not: null },
+                OR: [
+                    { conversationId: null },
+                    { conversation: { channel: { not: 'SIMULATOR' } } }
+                ]
             },
             _count: { _all: true },
         });
@@ -69,6 +109,10 @@ let MetricsService = class MetricsService {
                 clinicId,
                 createdAt: { gte: fromDate },
                 hourOfDay: { not: null },
+                OR: [
+                    { conversationId: null },
+                    { conversation: { channel: { not: 'SIMULATOR' } } }
+                ]
             },
             _count: { _all: true },
         });

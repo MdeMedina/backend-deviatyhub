@@ -9,15 +9,36 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.HttpExceptionFilter = void 0;
 const common_1 = require("@nestjs/common");
 let HttpExceptionFilter = class HttpExceptionFilter {
+    logger = new common_1.Logger('HttpExceptionFilter');
     catch(exception, host) {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse();
-        const status = exception instanceof common_1.HttpException
-            ? exception.getStatus()
-            : common_1.HttpStatus.INTERNAL_SERVER_ERROR;
-        const exceptionResponse = exception instanceof common_1.HttpException ? exception.getResponse() : null;
+        const request = ctx.getRequest();
+        let status = common_1.HttpStatus.INTERNAL_SERVER_ERROR;
+        if (exception instanceof common_1.HttpException) {
+            status = exception.getStatus();
+        }
+        else if (exception && typeof exception.getStatus === 'function') {
+            status = exception.getStatus();
+        }
+        else if (exception && typeof exception.status === 'number') {
+            status = exception.status;
+        }
+        else if (exception && typeof exception.statusCode === 'number') {
+            status = exception.statusCode;
+        }
+        let exceptionResponse = null;
+        if (exception instanceof common_1.HttpException) {
+            exceptionResponse = exception.getResponse();
+        }
+        else if (exception && typeof exception.getResponse === 'function') {
+            exceptionResponse = exception.getResponse();
+        }
+        else if (exception && exception.response) {
+            exceptionResponse = exception.response;
+        }
         let code = 'INTERNAL_ERROR';
-        let message = exception.message || 'Internal server error';
+        let message = exception?.message || 'Internal server error';
         // Mapeo dinámico de códigos según API Reference
         if (status === common_1.HttpStatus.BAD_REQUEST)
             code = 'VALIDATION_ERROR';
@@ -34,11 +55,20 @@ let HttpExceptionFilter = class HttpExceptionFilter {
             const respObj = exceptionResponse;
             if (respObj.message) {
                 message = Array.isArray(respObj.message)
-                    ? respObj.message[0]
+                    ? respObj.message.join(', ')
                     : respObj.message;
             }
             if (respObj.code)
                 code = respObj.code;
+        }
+        // Loguear el error con detalles contextuales
+        const path = request?.url || '';
+        const method = request?.method || '';
+        if (status >= 500) {
+            this.logger.error(`💥 [${method}] ${path} Status: ${status} - Error: ${exception.message || exception}`, exception.stack);
+        }
+        else {
+            this.logger.warn(`⚠️ [${method}] ${path} Status: ${status} - Code: ${code} - Msg: ${message}`);
         }
         response.status(status).send({
             success: false,
