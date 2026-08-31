@@ -102,7 +102,7 @@ export class BrainService {
     }
 
     // 3. Definir HERRAMIENTAS para el Agente
-    const tools = [
+    const allTools = [
       new DynamicStructuredTool({
         name: 'check_availability',
         description: 'Usa esta herramienta cuando el paciente pida una cita o pregunte por horarios para un día específico.',
@@ -241,6 +241,30 @@ export class BrainService {
         },
       }),
     ];
+
+    // 3.b Filtrar herramientas según la configuración de "Acciones del agente"
+    // (UI -> agent_configs.actions). Si una acción está desactivada, su(s)
+    // herramienta(s) no se exponen al modelo, por lo que el agente no puede
+    // ejecutarla. 'escalate_to_human' siempre está disponible por seguridad.
+    const agentConfig = await this.prisma.agentConfig.findUnique({
+      where: { clinicId: params.clinicId },
+    });
+    const actions = ((agentConfig?.actions as any) || {}) as Record<string, { active?: boolean }>;
+    const isActionEnabled = (key: string) => actions?.[key]?.active !== false; // por defecto habilitado si no está configurado
+
+    const enabledToolNames = new Set<string>(['escalate_to_human']);
+    if (isActionEnabled('schedule')) {
+      enabledToolNames.add('check_availability');
+    }
+    if (isActionEnabled('reschedule')) {
+      enabledToolNames.add('reschedule_appointment');
+      enabledToolNames.add('search_active_appointments');
+    }
+    if (isActionEnabled('cancel')) {
+      enabledToolNames.add('cancel_appointment');
+      enabledToolNames.add('search_active_appointments');
+    }
+    const tools = allTools.filter((t) => enabledToolNames.has(t.name));
 
     // 4. Crear Agente y Executor
     const clinic = await this.prisma.clinic.findUnique({
