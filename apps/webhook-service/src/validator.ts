@@ -7,7 +7,7 @@ import crypto from 'crypto';
  * @param secret El secreto del webhook configurado en Meta
  */
 export function validateMetaSignature(payload: string | Buffer, signature: string, secret: string): boolean {
-  if (!signature || !secret) return false;
+  if (!signature || !secret || payload === undefined || payload === null) return false;
 
   // Meta envía la firma en formato 'sha256={hash}'
   const [algorithm, hash] = signature.split('=');

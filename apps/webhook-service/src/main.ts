@@ -1,5 +1,4 @@
 import fastify from 'fastify';
-import rawBody from 'fastify-raw-body';
 import dotenv from 'dotenv';
 import { validateMetaSignature } from './validator';
 import { enqueueMessage } from './queue';
@@ -10,13 +9,21 @@ const server = fastify({
   logger: true,
 });
 
-// Registrar plugin para obtener el body crudo (necesario para HMAC)
-server.register(rawBody, {
-  field: 'rawBody',
-  global: false,
-  encoding: 'utf8',
-  runFirst: true,
-});
+// Capturar el body CRUDO (necesario para validar la firma HMAC de Meta) y
+// además parsear el JSON. Reemplaza a fastify-raw-body, que no poblaba rawBody.
+server.addContentTypeParser(
+  'application/json',
+  { parseAs: 'string' },
+  (req, body, done) => {
+    (req as any).rawBody = body;
+    try {
+      const json = body && (body as string).length ? JSON.parse(body as string) : {};
+      done(null, json);
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  },
+);
 
 const PORT = parseInt(process.env.PORT || '3005');
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'deviaty_secret_token';
