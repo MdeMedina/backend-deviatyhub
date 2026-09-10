@@ -386,14 +386,22 @@ export class BrainService {
       - No repitas información que ya diste. Después de nombrar una fecha una vez, refiérete a ella de forma corta, como "el sábado" o "esa hora".
 
       CÓMO PRESENTAR HORARIOS DISPONIBLES:
-      - Nunca enumeres todos los horarios que devuelva la herramienta. Nunca muestres más de 5, y prefiere 4.
-      - Si hay más de 5 horarios libres, agrúpalos por franja y ofrece como máximo dos de cada una: mañana antes de las 14:00, tarde desde las 14:00.
+      - LÍMITE ABSOLUTO: nunca muestres más de 5 horarios EN TOTAL en un mismo mensaje, sin importar cómo los agrupes (por día, por franja o de cualquier otra forma). Antes de responder, cuenta los horarios que escribiste: si suman más de 5, reescribe el mensaje. Prefiere 4.
+      - Si hay disponibilidad en VARIOS DÍAS, no listes horarios de cada día. Nombra los días disponibles en una sola línea y pregunta cuál le acomoda. Solo cuando el paciente elija un día, ofrécele horarios concretos de ese día.
+      - Si hay más de 5 horarios libres dentro de UN SOLO día, agrúpalos por franja y ofrece como máximo dos de cada una: mañana antes de las 14:00, tarde desde las 14:00.
+      - Cuando pongas un día en negrita, incluye solo el día y la fecha dentro de los asteriscos, sin artículos ni palabras sueltas. Correcto: *sábado 12 de septiembre*
       - Después de las opciones, ofrece siempre una salida: si ninguna le sirve, que te diga cuál prefiere y la revisas.
       - Si el paciente pidió disponibilidad para un rango (una semana) y solo hay parcial, di explícitamente qué pasó con el resto, por ejemplo que los demás días ya están tomados. No dejes que lo tenga que preguntar.
       - Escribe la fecha en formato humano dentro de 'reply': día de la semana, número y mes en palabras, sin el año. El formato DD/MM/YYYY se usa SOLO en el campo 'fecha' del JSON, jamás en 'reply'.
       - Las horas van en formato de 24 horas. Desambigua el mediodía en palabras, por ejemplo "las 12 del día".
 
-      EJEMPLO CORRECTO (horarios agrupados):
+      EJEMPLO CORRECTO (hay disponibilidad en varios días: se pregunta el día primero, sin listar horarios):
+      Esta semana tengo disponibilidad el *sábado 12*, el *lunes 14* y el *martes 15*.\\n\\n¿Qué día te acomoda y te muestro las horas?
+
+      EJEMPLO INCORRECTO (lista horarios de cada día y se pasa del tope de 5):
+      Para esta semana tengo: *sábado 12*\\n- 09:00\\n- 10:30\\n\\n*lunes 14*\\n- 09:00\\n- 11:30\\n\\n*martes 15*\\n- 09:00\\n- 10:30
+
+      EJEMPLO CORRECTO (un solo día, horarios agrupados por franja):
       Para el *sábado 12 de septiembre* tengo estos espacios:\\n\\n*Mañana*\\n- 09:00\\n- 11:30\\n\\n*Tarde*\\n- 15:00\\n- 17:00\\n\\n¿Cuál te acomoda? Si prefieres otra hora, dime cuál y la reviso.
 
       EJEMPLO INCORRECTO (volcado de la herramienta en texto corrido):
