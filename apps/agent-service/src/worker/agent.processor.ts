@@ -63,6 +63,19 @@ export class AgentProcessor extends WorkerHost {
         return;
       }
 
+      // 1.b Modo pausado: el agente no contesta. El mensaje del paciente ya
+      // quedó guardado, así que la conversación aparece en la bandeja para que
+      // la atienda el equipo; simplemente no se genera ni se envía respuesta.
+      const agentConfig = await this.prisma.agentConfig.findUnique({
+        where: { clinicId: clinic_id },
+      });
+      if ((agentConfig as any)?.mode === 'PAUSED') {
+        this.logger.warn(
+          `Agente en PAUSA para la clínica ${clinic_id}. No se responde a ${conversation_id}.`,
+        );
+        return;
+      }
+
       // 2. Ejecutar "Cerebro" (LLM)
       const response = await this.brain.processMessage({
         conversationId: conversation_id,

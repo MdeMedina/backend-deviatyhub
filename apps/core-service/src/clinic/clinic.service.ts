@@ -225,11 +225,12 @@ export class ClinicService {
       id: config.id,
       clinic_id: config.clinicId,
       actions: config.actions,
+      mode: config.mode,
       updated_at: config.updatedAt,
     };
   }
 
-  async updateAgentConfig(clinicId: string, dto: { actions: any }) {
+  async updateAgentConfig(clinicId: string, dto: { actions?: any; mode?: any }) {
     this.logger.log(`updateAgentConfig - clinicId: ${clinicId}`);
     const defaultActions = {
       schedule: { active: false, channels: [], integrations: [] },
@@ -237,14 +238,19 @@ export class ClinicService {
       cancel: { active: false, channels: [], integrations: [] },
     };
 
+    // El modo y las acciones se editan desde pantallas distintas, así que cada
+    // campo solo se toca si viene en la petición: si no, un PATCH de uno
+    // pisaría el otro con el valor por defecto.
     const config = await this.prisma.agentConfig.upsert({
       where: { clinicId },
       create: {
         clinicId,
         actions: (dto.actions || defaultActions) as any,
+        ...(dto.mode ? { mode: dto.mode } : {}),
       },
       update: {
-        actions: (dto.actions || defaultActions) as any,
+        ...(dto.actions ? { actions: dto.actions as any } : {}),
+        ...(dto.mode ? { mode: dto.mode } : {}),
       },
     });
 
@@ -252,6 +258,7 @@ export class ClinicService {
       id: config.id,
       clinic_id: config.clinicId,
       actions: config.actions,
+      mode: config.mode,
       updated_at: config.updatedAt,
     };
   }

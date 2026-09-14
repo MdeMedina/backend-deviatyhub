@@ -31,6 +31,16 @@ enum IntegrationType {
   GMAIL
 }
 
+/// Cómo opera el agente con los pacientes.
+/// AUTONOMOUS: responde y gestiona la agenda.
+/// SUPERVISED: responde dudas, pero no agenda, reprograma ni cancela.
+/// PAUSED: no responde; las conversaciones quedan para el equipo.
+enum AgentMode {
+  AUTONOMOUS
+  SUPERVISED
+  PAUSED
+}
+
 enum MessageRole {
   USER
   ASSISTANT
@@ -74,68 +84,68 @@ enum MetricEventType {
 // ─────────────────────────────────────────
 
 model Clinic {
-  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  id           String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name         String
-  slug         String   @unique
+  slug         String     @unique
   plan         ClinicPlan @default(STARTER)
-  active       Boolean?  @default(true)
-  billingEmail String   @map("billing_email")
-  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  active       Boolean?   @default(true)
+  billingEmail String     @map("billing_email")
+  createdAt    DateTime?  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime?  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relaciones
-  roles               Role[]
-  users               User[]
-  integrations        ClinicIntegration[]
-  agentConfig         AgentConfig?
-  auditLogs           AuditLog[]
-  platformMetrics     PlatformMetric[]
-  configs             ClinicConfig?
-  schedules           ClinicSchedule[]
+  roles                Role[]
+  users                User[]
+  integrations         ClinicIntegration[]
+  agentConfig          AgentConfig?
+  auditLogs            AuditLog[]
+  platformMetrics      PlatformMetric[]
+  configs              ClinicConfig?
+  schedules            ClinicSchedule[]
   unavailabilityBlocks UnavailabilityBlock[]
-  policies            Policy[]
-  doctors             Doctor[]
-  treatments          Treatment[]
-  offers              TreatmentOffer[]
-  appointments        Appointment[]
-  contacts            ClinicContact[]
-  conversations       Conversation[]
-  messages            Message[]
-  patientSessions     PatientSession[]
-  metricsEvents       MetricsEvent[]
-  knowledgeOverrides  ClinicKnowledgeOverride[]
+  policies             Policy[]
+  doctors              Doctor[]
+  treatments           Treatment[]
+  offers               TreatmentOffer[]
+  appointments         Appointment[]
+  contacts             ClinicContact[]
+  conversations        Conversation[]
+  messages             Message[]
+  patientSessions      PatientSession[]
+  metricsEvents        MetricsEvent[]
+  knowledgeOverrides   ClinicKnowledgeOverride[]
 
   @@map("clinics")
 }
 
 model Role {
-  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId     String   @map("clinic_id") @db.Uuid
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId     String    @map("clinic_id") @db.Uuid
   name         String
   isSuperadmin Boolean?  @default(false) @map("is_superadmin")
-  permissions  Json     @default("{}")
+  permissions  Json      @default("{}")
   createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz
 
-  clinic       Clinic   @relation(fields: [clinicId], references: [id])
-  users        User[]
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+  users  User[]
 
   @@map("roles")
 }
 
 model User {
-  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId      String   @map("clinic_id") @db.Uuid
-  email         String   @unique
-  passwordHash  String?  @map("password_hash")
-  inviteToken   String?  @map("invite_token")
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId      String    @map("clinic_id") @db.Uuid
+  email         String    @unique
+  passwordHash  String?   @map("password_hash")
+  inviteToken   String?   @map("invite_token")
   inviteExpires DateTime? @map("invite_expires") @db.Timestamptz
-  roleId        String   @map("role_id") @db.Uuid
+  roleId        String    @map("role_id") @db.Uuid
   active        Boolean?  @default(true)
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic        Clinic   @relation(fields: [clinicId], references: [id])
-  role          Role     @relation(fields: [roleId], references: [id])
+  clinic        Clinic         @relation(fields: [clinicId], references: [id])
+  role          Role           @relation(fields: [roleId], references: [id])
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]
   conversations Conversation[] @relation("AssignedOperator")
@@ -144,71 +154,72 @@ model User {
 }
 
 model RefreshToken {
-  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  tokenHash String   @unique @map("token_hash")
-  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
   revokedAt DateTime? @map("revoked_at") @db.Timestamptz
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz
 
-  user      User     @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@map("refresh_tokens")
 }
 
 model ClinicIntegration {
-  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId     String   @map("clinic_id") @db.Uuid
+  id           String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId     String          @map("clinic_id") @db.Uuid
   type         IntegrationType
-  connected    Boolean?  @default(false)
+  connected    Boolean?        @default(false)
   credentials  Json?
-  lastTestedAt DateTime? @map("last_tested_at") @db.Timestamptz
-  lastTestOk   Boolean?  @map("last_test_ok")
-  updatedAt    DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  lastTestedAt DateTime?       @map("last_tested_at") @db.Timestamptz
+  lastTestOk   Boolean?        @map("last_test_ok")
+  updatedAt    DateTime?       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic       Clinic   @relation(fields: [clinicId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
 
   @@unique([clinicId, type])
   @@map("clinic_integrations")
 }
 
 model AgentConfig {
-  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId  String   @unique @map("clinic_id") @db.Uuid
-  actions   Json     @default("{}")
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId  String    @unique @map("clinic_id") @db.Uuid
+  actions   Json      @default("{}")
+  mode      AgentMode @default(AUTONOMOUS)
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
 
   @@map("agent_configs")
 }
 
 model AuditLog {
-  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId  String   @map("clinic_id") @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId  String    @map("clinic_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
   action    String
   entity    String
-  entityId  String   @map("entity_id") @db.Uuid
-  changes   Json     @default("{}")
+  entityId  String    @map("entity_id") @db.Uuid
+  changes   Json      @default("{}")
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz
 
-  clinic    Clinic   @relation(fields: [clinicId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
 
   @@index([clinicId, createdAt])
   @@map("audit_logs")
 }
 
 model PlatformMetric {
-  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId   String   @map("clinic_id") @db.Uuid
-  metricType String   @map("metric_type")
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId   String    @map("clinic_id") @db.Uuid
+  metricType String    @map("metric_type")
   value      Float
   recordedAt DateTime? @default(now()) @map("recorded_at") @db.Timestamptz
 
-  clinic     Clinic   @relation(fields: [clinicId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
 
   @@index([clinicId, metricType, recordedAt])
   @@map("platform_metrics")
@@ -219,75 +230,75 @@ model PlatformMetric {
 // ─────────────────────────────────────────
 
 model ClinicConfig {
-  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId  String   @unique @map("clinic_id") @db.Uuid
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId  String    @unique @map("clinic_id") @db.Uuid
   name      String
   address   String
   phone     String
   email     String
   timezone  String
-  language  String   @default("es")
+  language  String    @default("es")
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
 
   @@map("clinic_configs")
 }
 
 model ClinicSchedule {
-  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId   String   @map("clinic_id") @db.Uuid
-  dayOfWeek  Int      @map("day_of_week")
-  openTime   String   @map("open_time")
-  closeTime  String   @map("close_time")
-  isOpen     Boolean?  @default(true) @map("is_open")
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId  String   @map("clinic_id") @db.Uuid
+  dayOfWeek Int      @map("day_of_week")
+  openTime  String   @map("open_time")
+  closeTime String   @map("close_time")
+  isOpen    Boolean? @default(true) @map("is_open")
 
-  clinic     Clinic   @relation(fields: [clinicId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
 
   @@unique([clinicId, dayOfWeek])
   @@map("clinic_schedules")
 }
 
 model UnavailabilityBlock {
-  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId    String   @map("clinic_id") @db.Uuid
-  name        String
-  daysOfWeek  Int[]    @map("days_of_week")
-  startTime   String   @map("start_time")
-  endTime     String   @map("end_time")
-  active      Boolean?  @default(true)
-  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId   String    @map("clinic_id") @db.Uuid
+  name       String
+  daysOfWeek Int[]     @map("days_of_week")
+  startTime  String    @map("start_time")
+  endTime    String    @map("end_time")
+  active     Boolean?  @default(true)
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
 
   @@map("unavailability_blocks")
 }
 
 model Policy {
-  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId    String   @map("clinic_id") @db.Uuid
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId    String    @map("clinic_id") @db.Uuid
   title       String
   description String
   active      Boolean?  @default(true)
   createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
 
   @@map("policies")
 }
 
 model Doctor {
-  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId  String   @map("clinic_id") @db.Uuid
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId  String    @map("clinic_id") @db.Uuid
   name      String
   title     String
   active    Boolean?  @default(true)
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic       Clinic   @relation(fields: [clinicId], references: [id])
+  clinic       Clinic            @relation(fields: [clinicId], references: [id])
   treatments   DoctorTreatment[]
   appointments Appointment[]
 
@@ -295,12 +306,12 @@ model Doctor {
 }
 
 model Treatment {
-  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId        String   @map("clinic_id") @db.Uuid
+  id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId        String    @map("clinic_id") @db.Uuid
   name            String
   category        String
-  durationAvgMin  Int?     @map("duration_avg_min")
-  encyclopediaRef String?  @map("encyclopedia_ref") @db.Uuid
+  durationAvgMin  Int?      @map("duration_avg_min")
+  encyclopediaRef String?   @map("encyclopedia_ref") @db.Uuid
   active          Boolean?  @default(true)
   // Campos que la API/front usan directamente sobre el tratamiento
   description     String?
@@ -313,7 +324,7 @@ model Treatment {
   createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic       Clinic   @relation(fields: [clinicId], references: [id])
+  clinic       Clinic            @relation(fields: [clinicId], references: [id])
   doctors      DoctorTreatment[]
   offers       TreatmentOffer[]
   appointments Appointment[]
@@ -328,17 +339,17 @@ model DoctorTreatment {
   doctorId    String @map("doctor_id") @db.Uuid
   treatmentId String @map("treatment_id") @db.Uuid
 
-  doctor      Doctor    @relation(fields: [doctorId], references: [id])
-  treatment   Treatment @relation(fields: [treatmentId], references: [id])
+  doctor    Doctor    @relation(fields: [doctorId], references: [id])
+  treatment Treatment @relation(fields: [treatmentId], references: [id])
 
   @@unique([doctorId, treatmentId])
   @@map("doctor_treatments")
 }
 
 model TreatmentOffer {
-  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId    String   @map("clinic_id") @db.Uuid
-  treatmentId String   @map("treatment_id") @db.Uuid
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId    String    @map("clinic_id") @db.Uuid
+  treatmentId String    @map("treatment_id") @db.Uuid
   label       String
   price       Int?
   discountPct Int?      @map("discount_pct")
@@ -348,37 +359,37 @@ model TreatmentOffer {
   validUntil  DateTime? @map("valid_until") @db.Timestamptz
   createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz
 
-  clinic      Clinic    @relation(fields: [clinicId], references: [id])
-  treatment   Treatment @relation(fields: [treatmentId], references: [id])
+  clinic    Clinic    @relation(fields: [clinicId], references: [id])
+  treatment Treatment @relation(fields: [treatmentId], references: [id])
 
   @@map("treatment_offers")
 }
 
 model Appointment {
-  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId        String   @map("clinic_id") @db.Uuid
-  contactId       String?  @map("contact_id") @db.Uuid
-  treatmentId     String?  @map("treatment_id") @db.Uuid
-  doctorId        String?  @map("doctor_id") @db.Uuid
-  conversationId  String?  @map("conversation_id") @db.Uuid
-  contactName     String?  @map("contact_name")
-  scheduledAt     DateTime @map("scheduled_at") @db.Timestamptz
-  durationMin     Int      @map("duration_min")
-  status          AppointmentStatus @default(PENDING)
-  source          AppointmentSource @default(AGENT)
-  externalId      String?  @map("external_id")
-  notes           String?
-  reminder3dSent  Boolean? @default(false) @map("reminder_3d_sent")
-  reminder1dSent  Boolean? @default(false) @map("reminder_1d_sent")
-  reminder1hSent  Boolean? @default(false) @map("reminder_1h_sent")
-  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id             String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId       String            @map("clinic_id") @db.Uuid
+  contactId      String?           @map("contact_id") @db.Uuid
+  treatmentId    String?           @map("treatment_id") @db.Uuid
+  doctorId       String?           @map("doctor_id") @db.Uuid
+  conversationId String?           @map("conversation_id") @db.Uuid
+  contactName    String?           @map("contact_name")
+  scheduledAt    DateTime          @map("scheduled_at") @db.Timestamptz
+  durationMin    Int               @map("duration_min")
+  status         AppointmentStatus @default(PENDING)
+  source         AppointmentSource @default(AGENT)
+  externalId     String?           @map("external_id")
+  notes          String?
+  reminder3dSent Boolean?          @default(false) @map("reminder_3d_sent")
+  reminder1dSent Boolean?          @default(false) @map("reminder_1d_sent")
+  reminder1hSent Boolean?          @default(false) @map("reminder_1h_sent")
+  createdAt      DateTime?         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime?         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic       Clinic        @relation(fields: [clinicId], references: [id])
-  contact      ClinicContact? @relation(fields: [contactId], references: [id])
-  treatment    Treatment?    @relation(fields: [treatmentId], references: [id])
-  doctor       Doctor?       @relation(fields: [doctorId], references: [id])
-  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  clinic       Clinic               @relation(fields: [clinicId], references: [id])
+  contact      ClinicContact?       @relation(fields: [contactId], references: [id])
+  treatment    Treatment?           @relation(fields: [treatmentId], references: [id])
+  doctor       Doctor?              @relation(fields: [doctorId], references: [id])
+  conversation Conversation?        @relation(fields: [conversationId], references: [id])
   history      AppointmentHistory[]
 
   @@index([clinicId, scheduledAt])
@@ -387,13 +398,13 @@ model Appointment {
 }
 
 model AppointmentHistory {
-  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  appointmentId String   @map("appointment_id") @db.Uuid
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  appointmentId String    @map("appointment_id") @db.Uuid
   event         String
-  payload       Json?    @default("{}")
+  payload       Json?     @default("{}")
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz
 
-  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
 
   @@index([appointmentId, createdAt])
   @@map("appointment_history")
@@ -404,11 +415,11 @@ model AppointmentHistory {
 // ─────────────────────────────────────────
 
 model ClinicContact {
-  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId          String   @map("clinic_id") @db.Uuid
+  id                String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId          String    @map("clinic_id") @db.Uuid
   phone             String?
   email             String?
-  instagramUser     String?  @map("instagram_user")
+  instagramUser     String?   @map("instagram_user")
   name              String?
   lastInteractionAt DateTime? @map("last_interaction_at") @db.Timestamptz
   createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz
@@ -424,24 +435,24 @@ model ClinicContact {
 }
 
 model Conversation {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId       String   @map("clinic_id") @db.Uuid
-  contactId      String?  @map("contact_id") @db.Uuid
+  id             String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId       String             @map("clinic_id") @db.Uuid
+  contactId      String?            @map("contact_id") @db.Uuid
   channel        String
   status         ConversationStatus @default(OPEN)
-  currentStep    String   @default("inicio") @map("current_step")
-  assignedUserId String?  @map("assigned_user_id") @db.Uuid
-  startedAt      DateTime? @default(now()) @map("started_at") @db.Timestamptz
-  closedAt       DateTime? @map("closed_at") @db.Timestamptz
+  currentStep    String             @default("inicio") @map("current_step")
+  assignedUserId String?            @map("assigned_user_id") @db.Uuid
+  startedAt      DateTime?          @default(now()) @map("started_at") @db.Timestamptz
+  closedAt       DateTime?          @map("closed_at") @db.Timestamptz
 
-  clinic      Clinic         @relation(fields: [clinicId], references: [id])
-  contact     ClinicContact? @relation(fields: [contactId], references: [id])
-  assignedTo  User?          @relation("AssignedOperator", fields: [assignedUserId], references: [id])
-  messages    Message[]
-  appointments Appointment[]
+  clinic          Clinic           @relation(fields: [clinicId], references: [id])
+  contact         ClinicContact?   @relation(fields: [contactId], references: [id])
+  assignedTo      User?            @relation("AssignedOperator", fields: [assignedUserId], references: [id])
+  messages        Message[]
+  appointments    Appointment[]
   patientSessions PatientSession[]
   metricsEvents   MetricsEvent[]
-  metadata        Json?          @default("{}")
+  metadata        Json?            @default("{}")
 
   @@index([clinicId, status])
   @@index([contactId])
@@ -450,16 +461,16 @@ model Conversation {
 }
 
 model Message {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  conversationId String   @map("conversation_id") @db.Uuid
-  clinicId       String   @map("clinic_id") @db.Uuid
+  id             String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  conversationId String      @map("conversation_id") @db.Uuid
+  clinicId       String      @map("clinic_id") @db.Uuid
   role           MessageRole
   content        String
-  langchainMeta  Json?    @default("{}") @map("langchain_meta")
-  sentAt         DateTime? @default(now()) @map("sent_at") @db.Timestamptz
+  langchainMeta  Json?       @default("{}") @map("langchain_meta")
+  sentAt         DateTime?   @default(now()) @map("sent_at") @db.Timestamptz
 
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-  clinic         Clinic       @relation(fields: [clinicId], references: [id])
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  clinic       Clinic       @relation(fields: [clinicId], references: [id])
 
   @@index([conversationId, sentAt])
   @@map("messages")
@@ -480,17 +491,17 @@ model PatientSession {
 }
 
 model MetricsEvent {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId       String   @map("clinic_id") @db.Uuid
+  id             String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId       String          @map("clinic_id") @db.Uuid
   eventType      MetricEventType @map("event_type")
-  conversationId String?  @map("conversation_id") @db.Uuid
-  value          Json?    @default("{}")
+  conversationId String?         @map("conversation_id") @db.Uuid
+  value          Json?           @default("{}")
   certainty      Float?
   intention      String?
-  hourOfDay      Int?     @map("hour_of_day")
-  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz
+  hourOfDay      Int?            @map("hour_of_day")
+  createdAt      DateTime?       @default(now()) @map("created_at") @db.Timestamptz
 
-  clinic       Clinic       @relation(fields: [clinicId], references: [id])
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
   conversation Conversation? @relation(fields: [conversationId], references: [id])
 
   @@index([clinicId, eventType, createdAt])
@@ -503,38 +514,38 @@ model MetricsEvent {
 // ─────────────────────────────────────────
 
 model DentalEntry {
-  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name             String
-  category         String
-  description      String
-  procedure        String
-  durationAvgMin   Int?     @map("duration_avg_min")
-  indications      String[]
+  id                String                      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name              String
+  category          String
+  description       String
+  procedure         String
+  durationAvgMin    Int?                        @map("duration_avg_min")
+  indications       String[]
   contraindications String[]
-  postCare         String[] @map("post_care")
-  keywords         String[]
-  embedding        Unsupported("vector(1536)")
-  updatedAt        DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  postCare          String[]                    @map("post_care")
+  keywords          String[]
+  embedding         Unsupported("vector(1536)")
+  updatedAt         DateTime?                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("dental_entries")
 }
 
 model ClinicKnowledgeOverride {
-  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  clinicId         String   @map("clinic_id") @db.Uuid
-  dentalEntryRef   String?  @map("dental_entry_ref") @db.Uuid
-  name             String
-  category         String
-  customProcedure  String?  @map("custom_procedure")
-  customPostCare   String[] @map("custom_post_care")
-  customIndications String[] @map("custom_indications")
-  customNotes      String?  @map("custom_notes")
-  active           Boolean?  @default(true)
-  embedding        Unsupported("vector(1536)")
-  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                String                      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId          String                      @map("clinic_id") @db.Uuid
+  dentalEntryRef    String?                     @map("dental_entry_ref") @db.Uuid
+  name              String
+  category          String
+  customProcedure   String?                     @map("custom_procedure")
+  customPostCare    String[]                    @map("custom_post_care")
+  customIndications String[]                    @map("custom_indications")
+  customNotes       String?                     @map("custom_notes")
+  active            Boolean?                    @default(true)
+  embedding         Unsupported("vector(1536)")
+  createdAt         DateTime?                   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime?                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  clinic           Clinic   @relation(fields: [clinicId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
 
   @@index([clinicId, active])
   @@map("clinic_knowledge_overrides")

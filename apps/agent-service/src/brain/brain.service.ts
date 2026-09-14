@@ -250,7 +250,23 @@ export class BrainService {
       where: { clinicId: params.clinicId },
     });
     const actions = ((agentConfig?.actions as any) || {}) as Record<string, { active?: boolean }>;
-    const isActionEnabled = (key: string) => actions?.[key]?.active !== false; // por defecto habilitado si no está configurado
+
+    // En modo supervisado el agente informa pero no gestiona la agenda: se le
+    // retiran las herramientas de agendar, reprogramar y cancelar. (El modo
+    // PAUSED se corta antes, en el worker: allí ni siquiera se le consulta.)
+    const mode = (agentConfig as any)?.mode ?? 'AUTONOMOUS';
+    const supervised = mode === 'SUPERVISED';
+
+    const isActionEnabled = (key: string) =>
+      !supervised && actions?.[key]?.active !== false; // por defecto habilitado si no está configurado
+
+    // Sin este aviso el modelo prometería agendar aunque no tenga la herramienta.
+    const supervisedBlock = supervised
+      ? `🔒 MODO SUPERVISADO ACTIVO:
+      - La clínica ha desactivado temporalmente la gestión de agenda. NO puedes agendar, reprogramar ni cancelar horas, y no tienes herramientas para hacerlo.
+      - Sí puedes informar sobre horarios de atención, tratamientos, precios y ubicación con el contexto que tienes.
+      - Si el paciente quiere agendar, cambiar o cancelar una hora, dile con naturalidad que en este momento eso lo gestiona el equipo de la clínica y que le van a responder por aquí mismo. Nunca prometas hacerlo tú ni inventes que ya quedó hecho.`
+      : '';
 
     const enabledToolNames = new Set<string>(['escalate_to_human']);
     if (isActionEnabled('schedule')) {
@@ -359,6 +375,8 @@ export class BrainService {
       - Si el usuario solicita agendar o pregunta sobre un tratamiento que NO aparece en la lista de "Tratamientos y Precios" (por ejemplo, solicita "ortodoncia" pero solo está "Limpieza Dental"), debes responderle amablemente que la clínica no ofrece ese tratamiento, listar los tratamientos que sí están disponibles para agendar, y dejar vacíos los campos de "procedimiento_id", "fecha" y "hora" del JSON, sin intentar agendar.
       - NO utilices la especialidad o título de un doctor (ej: que un doctor sea "Ortodoncista") para deducir que un tratamiento está disponible si este no figura explícitamente en el listado de tratamientos. El tratamiento debe existir obligatoriamente en el listado de "Tratamientos y Precios" de la clínica para poder ser agendado.
       
+      {supervisedBlock}
+
       ✍️ ESTILO Y FORMATO DE RESPUESTA (aplica SOLO al contenido del campo 'reply'):
 
       CANAL: El texto de 'reply' se envía directamente a WhatsApp y lo lee una persona en su teléfono. WhatsApp NO renderiza Markdown estándar. Escribe pensando en una pantalla pequeña.
@@ -536,6 +554,7 @@ export class BrainService {
       currentTime,
       currentDayOfWeek,
       bookingStateBlock,
+      supervisedBlock,
     });
 
     const toolsUsed: string[] = Array.isArray((response as any).intermediateSteps)
