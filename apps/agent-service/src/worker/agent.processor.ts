@@ -36,7 +36,7 @@ export class AgentProcessor extends WorkerHost {
       data = normalized;
     }
 
-    const { contact_id, message, clinic_id, conversation_id } = data;
+    const { contact_id, message, clinic_id, conversation_id, user_message_id } = data;
     this.logger.log(`🤖 Procesando mensaje para contacto ${contact_id} en clínica ${clinic_id}`);
 
     try {
@@ -85,6 +85,24 @@ export class AgentProcessor extends WorkerHost {
         },
       });
 
+      // 3.a Guardar la intención detectada en el mensaje del paciente. El
+      // clasificador ya la calcula en cada turno, pero hasta ahora no se
+      // persistía en ninguna parte, así que el panel de métricas no tenía de
+      // dónde sacar la distribución de intenciones.
+      if (user_message_id && (response as any).intent) {
+        await this.prisma.message
+          .update({
+            where: { id: user_message_id },
+            data: {
+              langchainMeta: {
+                intent: (response as any).intent,
+                certainty: (response as any).certainty ?? null,
+              },
+            },
+          })
+          .catch(() => undefined);
+      }
+
       // 3.b Persistir el paso de la FSM si el cerebro lo devolvió
       if ((response as any).currentStep) {
         await this.prisma.conversation
@@ -117,7 +135,13 @@ export class AgentProcessor extends WorkerHost {
   private async normalizeInbound(
     _channel: string,
     payload: any,
-  ): Promise<{ contact_id: string; message: { text: string }; clinic_id: string; conversation_id: string } | null> {
+  ): Promise<{
+    contact_id: string;
+    message: { text: string };
+    clinic_id: string;
+    conversation_id: string;
+    user_message_id: string;
+  } | null> {
     const value = payload?.entry?.[0]?.changes?.[0]?.value;
     const msg = value?.messages?.[0];
     if (!msg) return null; // status updates / sin mensaje
@@ -173,10 +197,16 @@ export class AgentProcessor extends WorkerHost {
     }
 
     // Persistir el mensaje entrante (rol USER)
-    await this.prisma.message.create({
+    const userMessage = await this.prisma.message.create({
       data: { conversationId: conversation.id, clinicId: clinic_id, role: 'USER', content: text, sentAt: new Date() },
     });
 
-    return { contact_id: contact.id, message: { text }, clinic_id, conversation_id: conversation.id };
+    return {
+      contact_id: contact.id,
+      message: { text },
+      clinic_id,
+      conversation_id: conversation.id,
+      user_message_id: userMessage.id,
+    };
   }
 }
