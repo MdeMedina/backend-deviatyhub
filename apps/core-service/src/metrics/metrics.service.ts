@@ -78,8 +78,19 @@ export class MetricsService {
             OR: [{ status: 'HUMAN_TAKEOVER' as any }, { assignedUserId: { not: null } }],
           },
         }),
+        // Solo las que agendó el agente a partir de una conversación real.
+        // Contar todas las filas de appointments inflaba el panel con los datos
+        // de demostración del seed (contacto ficticio, sin conversación), que
+        // además se recrean en cada despliegue y por eso siempre caían dentro
+        // del periodo. Las citas que carga el equipo a mano tampoco entran
+        // aquí: esta métrica mide lo agendado de forma autónoma.
         this.prisma.appointment.count({
-          where: { clinicId, createdAt: { gte: from, lt: to } },
+          where: {
+            clinicId,
+            createdAt: { gte: from, lt: to },
+            source: 'AGENT',
+            conversationId: { not: null },
+          },
         }),
         this.countHistoryEvents(clinicId, from, to, ['rescheduled', 'status_changed_rescheduled']),
         this.countHistoryEvents(clinicId, from, to, ['cancelled', 'status_changed_cancelled']),
