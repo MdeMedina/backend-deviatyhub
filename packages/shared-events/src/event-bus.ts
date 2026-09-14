@@ -10,8 +10,13 @@ export class EventBus {
 
   constructor(options: RedisOptions) {
     this.publisher = new Redis(options);
-    this.subscriber = new Redis(options);
-    
+    // La conexión suscriptora va sin readyCheck a propósito: ioredis manda INFO
+    // al conectar y al reconectar, y una conexión en modo suscriptor solo admite
+    // comandos de suscripción, así que ese INFO falla con "Connection in
+    // subscriber mode". Ocurría de forma intermitente al arrancar y cada vez que
+    // Redis se reiniciaba.
+    this.subscriber = new Redis({ ...options, enableReadyCheck: false });
+
     this.publisher.on('error', (err) => console.error('Redis Publisher Error:', err));
     this.subscriber.on('error', (err) => console.error('Redis Subscriber Error:', err));
   }
