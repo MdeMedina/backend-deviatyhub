@@ -19,7 +19,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Puerta previa al deploy: arranca el core-service con Prisma mockeado y un
+  # Redis efímero, y comprueba los flujos críticos. Corre aquí y no en el
+  # servidor porque el script publica eventos en el bus: contra la infra real
+  # los consumirían los servicios de producción.
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # prisma generate exige la variable aunque no llegue a conectarse.
+      DATABASE_URL: postgresql://user:pass@localhost:5432/db
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar cliente de Prisma
+        run: npx prisma generate --schema packages/shared-prisma/prisma/schema.prisma
+
+      - name: Compilar core-service y sus dependencias
+        run: npx turbo run build --filter=@deviaty/core-service...
+
+      - name: Verificar core-service
+        run: npm run verify --workspace @deviaty/core-service
+
   deploy:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Desplegar por SSH

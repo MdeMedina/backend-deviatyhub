@@ -22,7 +22,19 @@ const createMockFn = (returnValue?: any) => {
 };
 
 async function verifyCoreService() {
-  console.log('--- 🧪 VERIFICACIÓN INTEGRAL: CORE SERVICE (PHASE 3.4) ---');
+  console.log('--- 🧪 VERIFICACIÓN INTEGRAL: CORE SERVICE ---');
+
+  // Este script corre como puerta de CI: si algo falla tiene que terminar con
+  // código distinto de 0, o el pipeline seguiría adelante creyendo que pasó.
+  const failures: string[] = [];
+  const check = (name: string, ok: boolean) => {
+    if (ok) {
+      console.log(`✅ PASS: ${name}`);
+    } else {
+      console.log(`❌ FAIL: ${name}`);
+      failures.push(name);
+    }
+  };
 
   let app: NestFastifyApplication;
 
@@ -89,9 +101,7 @@ async function verifyCoreService() {
       headers: authHeaders
     });
 
-    if (resTakeover.statusCode === 201) {
-      console.log('✅ PASS: Takeover realizado correctamente.');
-    }
+    check('Takeover realizado correctamente', resTakeover.statusCode === 201);
 
     mockPrisma.conversation.findFirst.mockResolvedValueOnce({ id: 'conv-1', status: 'HUMAN_TAKEOVER', clinicId });
     mockPrisma.message.create.mockResolvedValueOnce({ id: 'msg-1', role: 'HUMAN' });
@@ -102,11 +112,8 @@ async function verifyCoreService() {
       payload: { content: 'Hola, te habla el Dr. Medina.' }
     });
 
-    if (resMsg.statusCode === 201) {
-      console.log('✅ PASS: Mensaje manual enviado correctamente en modo takeover.');
-    } else {
-      console.log('❌ FAIL: No se pudo enviar mensaje manual.', resMsg.body);
-    }
+    if (resMsg.statusCode !== 201) console.log('   respuesta:', resMsg.body);
+    check('Mensaje manual enviado en modo takeover', resMsg.statusCode === 201);
 
     // --- 13. METRICS: SUMMARY AGGREGATION ---
     console.log('\n👉 [13. METRICS: SUMMARY]');
@@ -141,17 +148,18 @@ async function verifyCoreService() {
       ['sin base de comparación no inventa tendencia', m.trends?.conversations_attended === null],
     ];
 
-    const failed = checks.filter(([, ok]) => !ok);
-    if (failed.length === 0) {
-      console.log(`✅ PASS: Métricas calculadas sobre datos reales (${checks.length} comprobaciones).`);
-    } else {
-      console.log('❌ FAIL: Métricas incorrectas:');
-      failed.forEach(([name]) => console.log(`   - ${name}`));
-      console.log('   respuesta:', JSON.stringify(m));
+    if (checks.some(([, ok]) => !ok)) console.log('   respuesta:', JSON.stringify(m));
+    checks.forEach(([name, ok]) => check(`Métricas: ${name}`, ok));
+
+    await app.close();
+
+    if (failures.length > 0) {
+      console.log(`\n--- ❌ VERIFICACIÓN FALLIDA (${failures.length}) ---`);
+      failures.forEach((f) => console.log(`   - ${f}`));
+      process.exit(1);
     }
 
-    console.log('\n--- 🎉 VERIFICACIÓN FINALIZADA ---');
-    await app.close();
+    console.log('\n--- 🎉 VERIFICACIÓN FINALIZADA SIN FALLOS ---');
     process.exit(0);
 
   } catch (error: any) {
