@@ -22,7 +22,11 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # Solo loopback, igual que postgres. Redis no lleva contraseña y aquí vive
+      # la cola de mensajes de pacientes: publicarlo en 0.0.0.0 lo dejaba
+      # accesible desde internet sin autenticación. Los servicios se conectan
+      # por la red de docker (redis://redis:6379), no por el puerto del host.
+      - "127.0.0.1:6379:6379"
     networks:
       - deviaty-net
 

@@ -9,7 +9,9 @@ import { ConversationGateway } from './conversation/conversation.gateway';
 const createMockFn = (returnValue?: any) => {
   const fn = (...args: any[]) => {
     fn.mock.calls.push(args);
-    const val = fn.mock.queue.shift() || fn.mock.returnValue;
+    // Ojo: no usar || aquí. Un 0 encolado es un valor legítimo y con || se
+    // descartaba silenciosamente, devolviendo el valor por defecto.
+    const val = fn.mock.queue.length ? fn.mock.queue.shift() : fn.mock.returnValue;
     return Promise.resolve(val);
   };
   fn.mock = { calls: [] as any[][], returnValue, queue: [] as any[] };
@@ -33,8 +35,8 @@ async function verifyCoreService() {
     doctorTreatment: { createMany: createMockFn(), deleteMany: createMockFn() },
     treatmentOffer: { create: createMockFn(), findFirst: createMockFn(), update: createMockFn() },
     clinicContact: { findFirst: createMockFn(), create: createMockFn(), findMany: createMockFn([]), count: createMockFn(0) },
-    appointment: { findMany: createMockFn([]), findFirst: createMockFn(), create: createMockFn(), update: createMockFn() },
-    appointmentHistory: { create: createMockFn() },
+    appointment: { findMany: createMockFn([]), findFirst: createMockFn(), create: createMockFn(), update: createMockFn(), count: createMockFn(0) },
+    appointmentHistory: { create: createMockFn(), count: createMockFn(0) },
     conversation: { 
       findMany: createMockFn([]), 
       findFirst: createMockFn(), 
@@ -42,7 +44,11 @@ async function verifyCoreService() {
       count: createMockFn(0) 
     },
     message: { create: createMockFn(), count: createMockFn(0) },
-    metricsEvent: { count: createMockFn(0), groupBy: createMockFn([]) },
+    // Las métricas ya no leen metrics_events (esa tabla nunca se pobló): ahora
+    // se calculan sobre conversations, appointments y consultas SQL directas.
+    // Un $queryRaw que devuelve [] es seguro para las cuatro consultas: da
+    // tiempo de respuesta null, fuera de horario 0 y listas vacías.
+    $queryRaw: createMockFn([]),
     auditLog: { create: createMockFn() },
     $transaction: (cb: any) => cb(mockPrisma),
   };
@@ -104,14 +110,13 @@ async function verifyCoreService() {
 
     // --- 13. METRICS: SUMMARY AGGREGATION ---
     console.log('\n👉 [13. METRICS: SUMMARY]');
-    mockPrisma.conversation.count.mockResolvedValueOnce(10); // convCount
-    mockPrisma.metricsEvent.count.mockResolvedValueOnce(2);  // appScheduled
-    mockPrisma.metricsEvent.count.mockResolvedValueOnce(0);  // appRescheduled
-    mockPrisma.metricsEvent.count.mockResolvedValueOnce(0);  // appCancelled
-    mockPrisma.metricsEvent.count.mockResolvedValueOnce(2);  // takeovers
-    mockPrisma.metricsEvent.groupBy.mockResolvedValueOnce([
-        { intention: 'agendar_cita', _count: { _all: 5 } }
-    ]);
+    // El servicio calcula dos ventanas (actual y anterior) para las tendencias.
+    // conversation.count se invoca en este orden: conversaciones y derivaciones
+    // de la ventana actual, y luego las mismas dos de la anterior.
+    mockPrisma.conversation.count.mockResolvedValueOnce(10); // actual: conversaciones
+    mockPrisma.conversation.count.mockResolvedValueOnce(2);  // actual: derivadas a humano
+    mockPrisma.conversation.count.mockResolvedValueOnce(0);  // anterior: conversaciones
+    mockPrisma.conversation.count.mockResolvedValueOnce(0);  // anterior: derivadas
 
     const resMetrics = await app.inject({
       method: 'GET',
@@ -120,10 +125,29 @@ async function verifyCoreService() {
     });
 
     const metricsBody = JSON.parse(resMetrics.body);
-    if (resMetrics.statusCode === 200 && metricsBody.success && metricsBody.data.containment_rate === 0.8) {
-      console.log('✅ PASS: Métricas calculadas correctamente (Containment Rate 0.8).');
+    const m = metricsBody.data || {};
+
+    const checks: [string, boolean][] = [
+      ['responde 200', resMetrics.statusCode === 200 && metricsBody.success === true],
+      ['containment rate 0.8 (8 de 10 sin derivar)', m.containment_rate === 0.8],
+      ['conversaciones atendidas 10', m.conversations_attended === 10],
+      ['derivaciones a humano 2', m.human_takeovers === 2],
+      ['tiempo de respuesta null si no hay pares', m.avg_response_time_ms === null],
+      ['fuera de horario 0', m.out_of_hours_conversations === 0],
+      ['histograma con las 24 horas', Array.isArray(m.interactions_by_hour) && m.interactions_by_hour.length === 24],
+      ['intenciones como lista', Array.isArray(m.intentions_distribution)],
+      ['incluye tendencias', !!m.trends],
+      // Sin actividad previa la variación es indefinida: debe ser null, no 0%.
+      ['sin base de comparación no inventa tendencia', m.trends?.conversations_attended === null],
+    ];
+
+    const failed = checks.filter(([, ok]) => !ok);
+    if (failed.length === 0) {
+      console.log(`✅ PASS: Métricas calculadas sobre datos reales (${checks.length} comprobaciones).`);
     } else {
-      console.log('❌ FAIL: El cálculo de métricas es incorrecto.', metricsBody);
+      console.log('❌ FAIL: Métricas incorrectas:');
+      failed.forEach(([name]) => console.log(`   - ${name}`));
+      console.log('   respuesta:', JSON.stringify(m));
     }
 
     console.log('\n--- 🎉 VERIFICACIÓN FINALIZADA ---');
