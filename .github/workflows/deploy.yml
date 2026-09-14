@@ -48,7 +48,10 @@ jobs:
           cache: npm
 
       - name: Instalar dependencias
-        run: npm ci
+        # --legacy-peer-deps para igualar lo que hace el Dockerfile: @nestjs/config
+        # 3.x declara peer de NestJS 8-10 y el proyecto va con 11, así que sin el
+        # flag npm aborta. Se mantiene "ci" para instalar desde el lockfile.
+        run: npm ci --legacy-peer-deps
 
       - name: Generar cliente de Prisma
         run: npx prisma generate --schema packages/shared-prisma/prisma/schema.prisma
