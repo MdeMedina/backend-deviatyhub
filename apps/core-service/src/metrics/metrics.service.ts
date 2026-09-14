@@ -206,6 +206,10 @@ function round2(n: number) {
 /** Variación porcentual respecto al periodo anterior. null si no es comparable. */
 function pctChange(prev: number | null, curr: number | null): number | null {
   if (prev == null || curr == null) return null;
-  if (prev === 0) return curr === 0 ? 0 : null;
+  // Sin actividad en ninguna de las dos ventanas no hay nada que comparar:
+  // un "0,0%" daría a entender que sí se midió algo y se mantuvo estable.
+  if (prev === 0 && curr === 0) return null;
+  // Partir de cero hace la variación porcentual indefinida (división por cero).
+  if (prev === 0) return null;
   return round2(((curr - prev) / Math.abs(prev)) * 100);
 }
