@@ -466,6 +466,7 @@ export class BrainService {
       - Tu única respuesta en 'reply' debe ser pedir confirmación explícita de la fecha, en una o dos oraciones, sin listas y sin ofrecer horarios todavía. Escribe la fecha en formato humano y en negrita, nunca en formato DD/MM/YYYY.
       - Ejemplo correcto de 'reply' en este paso: Entonces sería el *lunes 15 de junio*. ¿Te lo confirmo?
       - Tienes estrictamente prohibido buscar disponibilidad para ese día relativo con la herramienta o avanzar de paso hasta que el usuario confirme con un "sí" o similar.
+      - Si en ese mismo mensaje el paciente ya dijo la hora (por ejemplo "mañana a las 12"), NO se la vuelvas a preguntar. Al confirmar el día, da por recibida también esa hora y sigue con el siguiente dato que falte. Obligar al paciente a repetir algo que acaba de decir hace que la conversación parezca un formulario.
 
       🔄 REGLAS PARA GESTIÓN DE CITAS EXISTENTES (CANCELACIÓN / REPROGRAMACIÓN):
       - Si el paciente desea cancelar o cambiar una cita, invoca la herramienta \`search_active_appointments\` primero para conocer qué citas vigentes tiene.
@@ -495,6 +496,20 @@ export class BrainService {
 
       ESTADO ACTUAL DEL FLUJO: {currentStep}
       INTENCIÓN DETECTADA: {intent}
+
+      📋 DATOS NECESARIOS PARA AGENDAR. Se piden en este orden y no se puede reservar sin todos:
+      1. Tratamiento: rellena "procedimiento_id" con el UUID que aparece entre corchetes como [ID: ...] en la lista de Tratamientos y Precios. Nunca pongas ahí el nombre del tratamiento.
+      2. Fecha: campo "fecha", formato DD/MM/YYYY.
+      3. Hora: campo "hora", formato HH:MM.
+      4. Nombre, Apellido y correo del paciente.
+      - Mira el ESTADO DE AGENDAMIENTO PERSISTIDO y pide SOLO el primer dato que falte, uno por mensaje.
+      - Si el paciente pide hora sin decir para qué tratamiento, pregúntaselo ANTES de ofrecer horarios: la duración de la reserva depende del tratamiento, así que sin él los horarios que muestres pueden no ser válidos.
+      - El correo es obligatorio para cerrar la reserva. Pídelo junto con el nombre y el apellido.
+
+      🚫 TIENES PROHIBIDO ANUNCIAR LA CITA COMO YA AGENDADA:
+      - Tú no agendas. La reserva la ejecuta el sistema cuando están todos los datos anteriores, y es el sistema quien envía la confirmación final.
+      - Está PROHIBIDO escribir "Agendado", "Listo, quedó agendada", "Tu hora quedó reservada", "Confirmada" o cualquier frase que dé a entender que la cita ya existe. Si lo haces, el paciente se queda creyendo que tiene una hora que nadie reservó.
+      - Mientras falte cualquier dato, tu respuesta solo puede pedir el que falta. Puedes repetir el día y la hora que se están gestionando, pero siempre como algo todavía por confirmar.
 
       FORMATO OBLIGATORIO DE RESPUESTA (SIEMPRE JSON):
       Tu salida completa debe ser un único objeto JSON válido y nada más. Está prohibido escribir cualquier carácter antes de la primera llave de apertura o después de la última llave de cierre, y está prohibido envolver el JSON en un bloque de código.
@@ -651,6 +666,19 @@ export class BrainService {
           }
         }
       }
+
+      // 8. Guardarraíl: el modelo no puede dar por hecha una reserva que el
+      //    sistema no ejecutó. Solo executeScheduling confirma, y ese camino ya
+      //    sustituye el texto; si llegamos aquí sin 'concluido', la cita no
+      //    existe. El prompt ya lo prohíbe, pero una prohibición en el prompt es
+      //    probabilística y aquí el coste de fallar es que el paciente se quede
+      //    creyendo que tiene una hora que nadie reservó.
+      if (finalStep !== 'concluido' && claimsBookingDone(replyText)) {
+        this.logger.error(
+          `El modelo anunció una cita no agendada (paso real: ${finalStep}). Respuesta sustituida.`,
+        );
+        replyText = buildMissingDataReply(currentBooking);
+      }
     }
 
     return {
@@ -752,4 +780,42 @@ export function sanitizeReply(text: string): string {
   return text
     .replace(/\bTe gustaría\b/g, 'Quieres')
     .replace(/\bte gustaría\b/g, 'quieres');
+}
+
+/** Frases con las que el modelo da por hecha una reserva. Solo afirmaciones:
+ *  una pregunta como "¿quieres que te la deje agendada?" no cuenta. */
+const BOOKING_CLAIM_PATTERNS = [
+  /\bagendad[oa]\b\s*(para|el|:)/i,
+  /\b(qued[oó]|quedar[oó]n|est[aá]|ya est[aá])\s+(agendad[oa]|reservad[oa]|confirmad[oa])/i,
+  /\b(tu|su)\s+(hora|cita)\s+(qued[oó]|est[aá]|ya)/i,
+  /\breserva\s+(confirmada|realizada|hecha|lista)\b/i,
+];
+
+export function claimsBookingDone(text: string): boolean {
+  if (!text) return false;
+  return BOOKING_CLAIM_PATTERNS.some((re) => re.test(text));
+}
+
+/**
+ * Mensaje de reemplazo cuando el modelo confirmó de más: pide el primer dato
+ * que falta, en el mismo orden que exige la máquina de estados.
+ */
+export function buildMissingDataReply(booking: any): string {
+  const b = booking || {};
+  if (!b.procedimiento_id) {
+    return 'Para reservarte la hora necesito saber qué tratamiento necesitas.\n\n¿Me dices cuál?';
+  }
+  if (!b.fecha) {
+    return 'Me falta la fecha para dejar la reserva.\n\n¿Qué día te acomoda?';
+  }
+  if (!b.hora) {
+    return 'Me falta la hora para dejar la reserva.\n\n¿A qué hora te acomoda?';
+  }
+  if (!b.Nombre || !b.Apellido) {
+    return 'Me falta tu nombre completo para dejar la reserva.\n\n¿Me lo das?';
+  }
+  if (!b.correo) {
+    return 'Solo me falta tu correo para dejar la reserva.\n\n¿Me lo compartes?';
+  }
+  return 'Estoy terminando de registrar tu reserva. En un momento te confirmo.';
 }
