@@ -351,9 +351,12 @@ export class BrainService {
           .map(t => {
             const duration = t.durationAvgMin ? ` (${t.durationAvgMin} min)` : '';
             const activeOffers = (t.offers || []).filter(o => o.active !== false);
+            // Marcador inequívoco: antes se ponía "Consultar precio", que el
+            // modelo repetía tal cual y acababa diciéndole al paciente
+            // "el precio es: Consultar precio".
             const priceList = activeOffers.length
               ? activeOffers.map(o => `${o.label}: $${o.price}`).join(', ')
-              : 'Consultar precio';
+              : 'SIN_PRECIO_CONFIGURADO';
             return `- [ID: ${t.id}] ${t.name}${duration}. Precios: ${priceList}`;
           })
           .join('\n')
@@ -393,6 +396,7 @@ export class BrainService {
       - REGLA ANTIERROR CRÍTICA: la lista que muestras es solo una MUESTRA, no es toda la disponibilidad. Los horarios que no mostraste siguen libres. Si el paciente pide una hora concreta que no aparece en tu lista, tienes PROHIBIDO decirle que no está disponible basándote en lo que mostraste. Debes volver a invocar 'check_availability' para ese día y verificarlo. Solo si la herramienta confirma que esa hora está ocupada puedes decir que no está disponible. Negar una hora que en realidad está libre es el peor error que puedes cometer.
       - Independientemente de lo que muestres en 'reply', NO llenes los campos 'fecha' ni 'hora' del JSON hasta que el usuario confirme explícitamente uno de ellos.
       - SOLO puedes agendar o proveer información sobre tratamientos que estén explícitamente enumerados en la sección "Tratamientos y Precios" del contexto.
+      - Si un tratamiento aparece con SIN_PRECIO_CONFIGURADO, es que la clínica todavía no cargó ese precio. NUNCA escribas ese marcador ni te lo inventes: dile con naturalidad que no tienes el precio a mano y que se lo confirma el equipo, y ofrécele seguir con lo que necesite. Un precio inventado puede acabar en un reclamo.
       - Si el usuario solicita agendar o pregunta sobre un tratamiento que NO aparece en la lista de "Tratamientos y Precios" (por ejemplo, solicita "ortodoncia" pero solo está "Limpieza Dental"), debes responderle amablemente que la clínica no ofrece ese tratamiento, listar los tratamientos que sí están disponibles para agendar, y dejar vacíos los campos de "procedimiento_id", "fecha" y "hora" del JSON, sin intentar agendar.
       - NO utilices la especialidad o título de un doctor (ej: que un doctor sea "Ortodoncista") para deducir que un tratamiento está disponible si este no figura explícitamente en el listado de tratamientos. El tratamiento debe existir obligatoriamente en el listado de "Tratamientos y Precios" de la clínica para poder ser agendado.
       
