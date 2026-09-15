@@ -18,6 +18,11 @@ export enum REDIS_CHANNELS {
   APPOINTMENT_CANCELLED = 'appointment.cancelled',
   
   // Operativo e IA
+  // Mensaje nuevo en una conversación (entrante del paciente o respuesta del
+  // agente). El Core lo reemite por Socket.io para que el panel se actualice
+  // solo: sin este canal, los mensajes que escribía el agent-service no
+  // llegaban nunca a la interfaz.
+  CONVERSATION_MESSAGE = 'conversation.message',
   CONVERSATION_CLOSED = 'conversation.closed',
   HUMAN_ESCALATION = 'human.escalation',
   

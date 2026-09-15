@@ -34,6 +34,17 @@ export class ConversationListener implements OnModuleInit {
       });
     };
 
+    // Mensajes nuevos: lo que escribe el agent-service no pasa por el Core, así
+    // que sin este puente el panel solo se actualizaba al recargar.
+    await this.eventBus.subscribe(REDIS_CHANNELS.CONVERSATION_MESSAGE, async (payload: any) => {
+      const conversationId = payload?.conversationId;
+      if (!conversationId) return;
+      this.gateway.emitEvent('conversation.message', {
+        conversation_id: conversationId,
+        message: payload?.message ?? null,
+      });
+    });
+
     await this.eventBus.subscribe(REDIS_CHANNELS.APPOINTMENT_SCHEDULED, emitAction('appointment_scheduled'));
     await this.eventBus.subscribe(REDIS_CHANNELS.APPOINTMENT_RESCHEDULED, emitAction('appointment_rescheduled'));
     await this.eventBus.subscribe(REDIS_CHANNELS.APPOINTMENT_CANCELLED, emitAction('appointment_cancelled'));

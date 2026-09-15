@@ -21,6 +21,13 @@ export class AgentProcessor extends WorkerHost {
     super();
   }
 
+  /** Avisa al Core para que el panel refresque la conversación en vivo. */
+  private async notifyMessage(conversationId: string, message: any) {
+    await this.eventBus
+      .publish('conversation.message', { conversationId, message })
+      .catch((e) => this.logger.warn(`No se pudo notificar el mensaje: ${(e as Error).message}`));
+  }
+
   async process(job: Job<any, any, string>): Promise<any> {
     let data = job.data;
 
@@ -88,7 +95,7 @@ export class AgentProcessor extends WorkerHost {
       });
 
       // 3. Persistir respuesta en BDD
-      await this.prisma.message.create({
+      const assistantMessage = await this.prisma.message.create({
         data: {
           conversationId: conversation_id,
           clinicId: clinic_id,
@@ -97,6 +104,8 @@ export class AgentProcessor extends WorkerHost {
           sentAt: new Date(),
         },
       });
+
+      await this.notifyMessage(conversation_id, assistantMessage);
 
       // 3.a Guardar la intención detectada en el mensaje del paciente. El
       // clasificador ya la calcula en cada turno, pero hasta ahora no se
@@ -213,6 +222,9 @@ export class AgentProcessor extends WorkerHost {
     const userMessage = await this.prisma.message.create({
       data: { conversationId: conversation.id, clinicId: clinic_id, role: 'USER', content: text, sentAt: new Date() },
     });
+
+    // El mensaje del paciente también tiene que aparecer en el panel al vuelo.
+    await this.notifyMessage(conversation.id, userMessage);
 
     return {
       contact_id: contact.id,
