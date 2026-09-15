@@ -88,11 +88,16 @@ jobs:
             echo "==> Levantando servicios (redis, postgres, microservicios)"
             docker compose up -d
 
-            echo "==> Migraciones + seed (idempotente)"
+            echo "==> Migraciones"
             docker compose run --rm -w /app/packages/shared-prisma auth-service \
-              npx prisma db push --skip-generate --accept-data-loss
-            docker compose run --rm -w /app/packages/shared-prisma auth-service \
-              npx tsx prisma/seed.ts
+              npx prisma db push --skip-generate
+
+            # El seed NO se ejecuta aquí: borraba y regeneraba el dataset de la
+            # clínica, así que cada despliegue destruía las citas de pacientes
+            # reales y cambiaba los IDs de doctores y tratamientos. Es una
+            # herramienta de arranque, no un paso de despliegue; para poblar un
+            # entorno nuevo se lanza a mano desde el servidor:
+            #   docker compose run --rm -w /app/packages/shared-prisma auth-service npx tsx prisma/seed.ts
 
             echo "==> Estado final"
             docker compose ps

@@ -64,14 +64,38 @@ async function main() {
   console.log(`✅ Usuario: ${user.email}  🔑 ${password}`);
 
   // ── 4. Reset del dataset de simulación (orden FK-safe) ─────────
-  // Se regenera de forma determinista en cada ejecución.
-  await prisma.appointmentHistory.deleteMany({ where: { appointment: { clinicId } } });
-  await prisma.appointment.deleteMany({ where: { clinicId } });
-  await prisma.doctorTreatment.deleteMany({ where: { clinicId } });
-  await prisma.treatmentOffer.deleteMany({ where: { clinicId } });
-  await prisma.treatment.deleteMany({ where: { clinicId } });
-  await prisma.doctor.deleteMany({ where: { clinicId } });
-  await prisma.clinicSchedule.deleteMany({ where: { clinicId } });
+  //
+  // ATENCIÓN: esto borra las citas, los doctores, los tratamientos y los
+  // horarios de la clínica. El pipeline llegó a ejecutar el seed en cada
+  // despliegue, así que cada deploy destruía las citas de pacientes reales y
+  // cambiaba los IDs de doctores y tratamientos.
+  //
+  // Ahora el borrado exige SEED_RESET=true de forma explícita. Sin esa
+  // variable el seed solo crea lo que falte, de modo que ejecutarlo por error
+  // no puede destruir datos de producción.
+  const allowReset = process.env.SEED_RESET === 'true';
+  const existingAppointments = await prisma.appointment.count({ where: { clinicId } });
+
+  if (!allowReset) {
+    if (existingAppointments > 0) {
+      console.log(
+        `⏭️  La clínica ya tiene ${existingAppointments} cita(s). Se omite el dataset de simulación ` +
+          `para no borrar datos reales. Usa SEED_RESET=true si de verdad quieres regenerarlo.`
+      );
+      console.log('🌱 Seed completado (sin tocar el dataset existente).');
+      return;
+    }
+    console.log('ℹ️  Sin citas previas: se crea el dataset de simulación inicial.');
+  } else {
+    console.log('⚠️  SEED_RESET=true: se borra y regenera el dataset de simulación.');
+    await prisma.appointmentHistory.deleteMany({ where: { appointment: { clinicId } } });
+    await prisma.appointment.deleteMany({ where: { clinicId } });
+    await prisma.doctorTreatment.deleteMany({ where: { clinicId } });
+    await prisma.treatmentOffer.deleteMany({ where: { clinicId } });
+    await prisma.treatment.deleteMany({ where: { clinicId } });
+    await prisma.doctor.deleteMany({ where: { clinicId } });
+    await prisma.clinicSchedule.deleteMany({ where: { clinicId } });
+  }
 
   // ── 5. Doctores ───────────────────────────────────────────────
   const drMedina = await prisma.doctor.create({
