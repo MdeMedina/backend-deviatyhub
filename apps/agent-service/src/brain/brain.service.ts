@@ -350,13 +350,26 @@ export class BrainService {
       ? activeTreatments
           .map(t => {
             const duration = t.durationAvgMin ? ` (${t.durationAvgMin} min)` : '';
-            const activeOffers = (t.offers || []).filter(o => o.active !== false);
+            // Los precios viven en columnas del propio tratamiento, que es lo
+            // que edita la Base de conocimiento. Antes se leía la relación
+            // "offers" (treatment_offers), una tabla que ningún flujo llega a
+            // poblar: el agente nunca veía un precio aunque estuviera cargado.
+            const partes: string[] = [];
+            if (t.price != null) partes.push(`particular ${formatCLP(t.price)}`);
+            if (t.priceIsapre != null) partes.push(`Isapre ${formatCLP(t.priceIsapre)}`);
+            if (t.priceFonasa != null) partes.push(`Fonasa ${formatCLP(t.priceFonasa)}`);
+
+            // Se mantiene treatment_offers como respaldo por si alguna clínica
+            // llega a usarla.
+            if (!partes.length) {
+              const activeOffers = (t.offers || []).filter(o => o.active !== false);
+              activeOffers.forEach(o => partes.push(`${o.label}: ${formatCLP(o.price)}`));
+            }
+
             // Marcador inequívoco: antes se ponía "Consultar precio", que el
             // modelo repetía tal cual y acababa diciéndole al paciente
             // "el precio es: Consultar precio".
-            const priceList = activeOffers.length
-              ? activeOffers.map(o => `${o.label}: $${o.price}`).join(', ')
-              : 'SIN_PRECIO_CONFIGURADO';
+            const priceList = partes.length ? partes.join(' · ') : 'SIN_PRECIO_CONFIGURADO';
             return `- [ID: ${t.id}] ${t.name}${duration}. Precios: ${priceList}`;
           })
           .join('\n')
@@ -957,4 +970,10 @@ const MESES_ES = [
 /** "miércoles 16 de septiembre". Sin año, igual que pide el prompt para el texto al paciente. */
 export function formatFechaHumana(date: Date): string {
   return `${DIAS_ES[date.getDay()]} ${date.getDate()} de ${MESES_ES[date.getMonth()]}`;
+}
+
+/** Pesos chilenos con punto de miles: 25000 -> "$25.000". */
+export function formatCLP(value: number | null | undefined): string {
+  if (value == null) return '';
+  return `$${Math.round(value).toLocaleString('es-CL')}`;
 }
