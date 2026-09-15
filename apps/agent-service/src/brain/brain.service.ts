@@ -74,11 +74,26 @@ export class BrainService {
 - Correo electrónico (correo): ${bookingState.correo || 'vacío'}
 - Especialista elegido (doctor_id): ${bookingState.doctor_id || 'vacío (lo asigna el sistema)'}`;
 
-    // 1. Clasificar Intención (MVP simple antes del bucle de agente)
-    const classification = await this.classifier.classify(params.userInput);
-    
+    // 1. Clasificar Intención. Se le pasa el último mensaje del agente y el paso
+    //    del flujo: sin ese contexto, una respuesta a lo que el propio agente
+    //    acababa de preguntar salía con confianza baja y terminaba en derivación.
+    const lastAgentMessage = [...(params.history || [])]
+      .reverse()
+      .find((m: any) => String(m.role).toUpperCase() === 'ASSISTANT')?.content;
+
+    const classification = await this.classifier.classify(params.userInput, {
+      lastAgentMessage,
+      currentStep: params.currentStep,
+    });
+
+    // Con un agendamiento a medias, el paciente está contestando algo concreto.
+    // Derivarle por baja confianza rompe el flujo justo cuando más avanzado
+    // está; el agente principal ve todo el historial y puede interpretarlo.
+    const enMedioDeFlujo =
+      !!params.currentStep && params.currentStep !== 'inicio' && params.currentStep !== 'concluido';
+
     // 2. Gestionar Fallback (2 strikes) - Mantenemos la lógica de la Fase 6
-    if (classification.confidence < 0.8) {
+    if (classification.confidence < 0.8 && !enMedioDeFlujo) {
       const retryCount = (params.metadata?.retry_count || 0) + 1;
       if (retryCount >= 2) {
         await this.humanTool.escalate(params.conversationId, 'Baja confianza en intención persistente');
@@ -547,7 +562,10 @@ export class BrainService {
       - ORDEN OBLIGATORIO: esta regla se aplica DESPUÉS de haber fijado la fecha. Si el día todavía es relativo y sin confirmar ("mañana", "el lunes"), manda la REGLA DE ORO PARA FECHAS RELATIVAS: ese turno solo puede pedir la confirmación del día, sin consultar disponibilidad y sin pedir ningún otro dato. Solo cuando el paciente confirme el día pasas a comprobar la hora y a pedir lo que falte.
       - Si el paciente pide hora sin decir para qué tratamiento, pregúntaselo ANTES de ofrecer horarios: la duración de la reserva depende del tratamiento, así que sin él los horarios que muestres pueden no ser válidos.
       - El correo es obligatorio para cerrar la reserva. Pídelo junto con el nombre y el apellido.
-      - NO preguntes por el especialista: lo asigna el sistema según quién haga ese tratamiento y esté libre a esa hora. Solo si el paciente nombra a un doctor por iniciativa propia, guarda su UUID en "doctor_id"; si no, déjalo vacío. Si hay varios libres y hace falta elegir, el propio sistema te lo pedirá.
+      - El especialista se pide JUSTO DESPUÉS de tener fecha y hora, y ANTES de pedir el nombre y el correo. Es lo primero que falta en ese punto, y dejarlo para el final obliga al paciente a dar todos sus datos para recién entonces enterarse de que además tiene que elegir doctor.
+      - Cuando ya tengas tratamiento, fecha y hora, mira la lista de Doctores Disponibles: si el tratamiento lo atiende UNO SOLO, no preguntes nada y deja "doctor_id" vacío, que el sistema lo asigna. Si lo atienden VARIOS, pregúntale al paciente con cuál prefiere y guarda el UUID del que elija en "doctor_id".
+      - Si el paciente responde con el nombre del especialista (por ejemplo "con la doctora Ana López"), eso es una elección válida: busca ese nombre en la lista de Doctores Disponibles y guarda su UUID. No vuelvas a preguntar ni des a entender que no le entendiste.
+      - Si el que eligió no está libre a esa hora, el sistema te lo dirá y entonces le ofreces otra hora con ese especialista o cambiar de profesional.
 
       🚫 TIENES PROHIBIDO ANUNCIAR LA CITA COMO YA AGENDADA:
       - Tú no agendas. La reserva la ejecuta el sistema cuando están todos los datos anteriores, y es el sistema quien envía la confirmación final.

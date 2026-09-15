@@ -40,7 +40,30 @@ export class IntentionClassifier {
     this.parser = new JsonOutputParser<IntentResult>();
   }
 
-  async classify(text: string): Promise<IntentResult> {
+  /**
+   * @param context Última pregunta del agente y paso del flujo. Sin esto el
+   * mensaje se clasificaba aislado: una respuesta como "con la dra ana lópez"
+   * no encaja en ninguna intención del catálogo, salía con confianza baja y el
+   * paciente acababa derivado a un humano por contestar lo que se le preguntó.
+   */
+  async classify(
+    text: string,
+    context?: { lastAgentMessage?: string; currentStep?: string },
+  ): Promise<IntentResult> {
+    const contextBlock =
+      context?.lastAgentMessage || context?.currentStep
+        ? `
+      CONTEXTO DE LA CONVERSACIÓN (úsalo para interpretar el mensaje):
+      - Último mensaje del agente: "${(context.lastAgentMessage || '(ninguno)').slice(0, 300)}"
+      - Paso actual del flujo: ${context.currentStep || 'inicio'}
+
+      Si el mensaje del paciente es una respuesta a lo que acaba de preguntar el
+      agente (elegir un doctor, una hora, dar su nombre o su correo, aceptar o
+      rechazar), clasifícalo como "confirmacion" o "negacion" según corresponda y
+      con confianza ALTA. Responder a una pregunta del agente nunca es "otros".
+      `
+        : '';
+
     const prompt = PromptTemplate.fromTemplate(`
       Eres un experto clasificador de intenciones para una clínica dental. 
       Tu objetivo es analizar el mensaje del paciente y clasificarlo en UNA de las siguientes intenciones:
@@ -66,6 +89,8 @@ export class IntentionClassifier {
         "reasoning": "explicación breve de por qué elegiste esta intención"
       }}
       
+      {contextBlock}
+
       MENSAJE DEL PACIENTE: "{text}"
       
       RESPUESTA JSON:
@@ -74,7 +99,7 @@ export class IntentionClassifier {
     const chain = prompt.pipe(this.model as any).pipe(this.parser as any);
 
     try {
-      const result = await chain.invoke({ text }) as IntentResult;
+      const result = await chain.invoke({ text, contextBlock }) as IntentResult;
       this.logger.log(`Intención detectada: ${result.intent} (${Math.round(result.confidence * 100)}%)`);
       return result;
     } catch (error) {
