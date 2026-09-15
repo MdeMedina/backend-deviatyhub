@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject } from '@nestjs/common';
-import { PrismaService } from '@deviaty/shared-prisma';
+import { Prisma, PrismaService } from '@deviaty/shared-prisma';
 import { ConversationFilterDto } from './dto/conversation.dto';
 import { ConversationGateway } from './conversation.gateway';
 
@@ -22,22 +22,53 @@ export class ConversationService {
       ...(channel ? { channel } : { channel: { not: 'SIMULATOR' } }),
     };
 
-    const [data, total] = await Promise.all([
-      this.prisma.conversation.findMany({
-        where,
-        include: {
-          contact: true,
-          messages: {
-            orderBy: { sentAt: 'desc' },
-            take: 1,
-          },
-        },
-        orderBy: { startedAt: 'desc' },
-        skip,
-        take: limit,
-      }),
+    // La bandeja tiene que ordenarse por actividad, no por cuándo se abrió la
+    // conversación: ordenando por started_at, un chat abierto hace días pero con
+    // un mensaje recién llegado quedaba enterrado bajo otros más nuevos e
+    // inactivos, y parecía que el mensaje no se había registrado.
+    //
+    // Prisma no sabe ordenar por el máximo de una relación, así que el orden se
+    // resuelve en SQL. Se hace sobre la tabla de mensajes en vez de con una
+    // columna desnormalizada para que valga sea cual sea el servicio que lo
+    // escribió: basta con que el mensaje exista.
+    const statusFilter = status ? Prisma.sql`AND c.status::text = ${status}` : Prisma.empty;
+    const channelFilter = channel
+      ? Prisma.sql`AND c.channel::text = ${channel}`
+      : Prisma.sql`AND c.channel <> 'SIMULATOR'`;
+
+    const ordered = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT c.id
+      FROM conversations c
+      WHERE c.clinic_id = ${clinicId}::uuid
+        ${statusFilter}
+        ${channelFilter}
+      ORDER BY COALESCE(
+        (SELECT MAX(m.sent_at) FROM messages m WHERE m.conversation_id = c.id),
+        c.started_at
+      ) DESC
+      LIMIT ${limit} OFFSET ${skip}
+    `;
+    const orderedIds = ordered.map((r) => r.id);
+
+    const [rows, total] = await Promise.all([
+      orderedIds.length
+        ? this.prisma.conversation.findMany({
+            where: { id: { in: orderedIds } },
+            include: {
+              contact: true,
+              messages: {
+                orderBy: { sentAt: 'desc' },
+                take: 1,
+              },
+            },
+          })
+        : Promise.resolve([]),
       this.prisma.conversation.count({ where }),
     ]);
+
+    // findMany con "in" no respeta el orden de la lista, hay que reponerlo.
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const data = orderedIds.map((id) => byId.get(id)).filter(Boolean);
 
     return {
       data,
