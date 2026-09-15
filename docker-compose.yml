@@ -38,6 +38,11 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
+      # la disponibilidad construía los horarios con la hora del contenedor y
+      # descartaba como pasada toda la tarde.
+      - TZ=${CLINIC_TIMEZONE:-America/Santiago}
+      - CLINIC_TIMEZONE=${CLINIC_TIMEZONE:-America/Santiago}
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - AUTH_SERVICE_URL=http://auth-service:3001
@@ -59,6 +64,11 @@ services:
     ports:
       - "3001:3001"
     environment:
+      # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
+      # la disponibilidad construía los horarios con la hora del contenedor y
+      # descartaba como pasada toda la tarde.
+      - TZ=${CLINIC_TIMEZONE:-America/Santiago}
+      - CLINIC_TIMEZONE=${CLINIC_TIMEZONE:-America/Santiago}
       - PORT=3001
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
@@ -82,6 +92,11 @@ services:
     ports:
       - "3002:3002"
     environment:
+      # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
+      # la disponibilidad construía los horarios con la hora del contenedor y
+      # descartaba como pasada toda la tarde.
+      - TZ=${CLINIC_TIMEZONE:-America/Santiago}
+      - CLINIC_TIMEZONE=${CLINIC_TIMEZONE:-America/Santiago}
       - PORT=3002
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
@@ -103,6 +118,11 @@ services:
     ports:
       - "3003:3003"
     environment:
+      # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
+      # la disponibilidad construía los horarios con la hora del contenedor y
+      # descartaba como pasada toda la tarde.
+      - TZ=${CLINIC_TIMEZONE:-America/Santiago}
+      - CLINIC_TIMEZONE=${CLINIC_TIMEZONE:-America/Santiago}
       - PORT=3003
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
@@ -123,6 +143,11 @@ services:
     ports:
       - "3004:3004"
     environment:
+      # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
+      # la disponibilidad construía los horarios con la hora del contenedor y
+      # descartaba como pasada toda la tarde.
+      - TZ=${CLINIC_TIMEZONE:-America/Santiago}
+      - CLINIC_TIMEZONE=${CLINIC_TIMEZONE:-America/Santiago}
       - PORT=3004
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
@@ -146,6 +171,11 @@ services:
     ports:
       - "3005:3005"
     environment:
+      # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
+      # la disponibilidad construía los horarios con la hora del contenedor y
+      # descartaba como pasada toda la tarde.
+      - TZ=${CLINIC_TIMEZONE:-America/Santiago}
+      - CLINIC_TIMEZONE=${CLINIC_TIMEZONE:-America/Santiago}
       - PORT=3005
       - REDIS_URL=redis://redis:6379
       - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN}
@@ -163,6 +193,11 @@ services:
     ports:
       - "3006:3006"
     environment:
+      # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
+      # la disponibilidad construía los horarios con la hora del contenedor y
+      # descartaba como pasada toda la tarde.
+      - TZ=${CLINIC_TIMEZONE:-America/Santiago}
+      - CLINIC_TIMEZONE=${CLINIC_TIMEZONE:-America/Santiago}
       - PORT=3006
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
