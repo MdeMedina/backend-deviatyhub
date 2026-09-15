@@ -27,14 +27,18 @@ try {
 
 const eventBus = new EventBus(eventBusOptions);
 
-const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
+// Se leen en cada envío, no al arrancar. Los tokens de Meta caducan y hay que
+// reemplazarlos: leyéndolos a nivel de módulo, el proceso se quedaba con el
+// valor de su arranque y actualizar el .env no surtía efecto hasta recrear el
+// contenedor, con el agente fallando mientras tanto con "Authentication Error".
+const getPhoneNumberId = () => process.env.WHATSAPP_PHONE_NUMBER_ID;
+const getAccessToken = () => process.env.WHATSAPP_ACCESS_TOKEN;
 
 async function sendToMeta(event: any) {
   const { recipient, content, conversationId, clinicId } = event;
 
-  let phoneNumberId = PHONE_NUMBER_ID;
-  let accessToken = ACCESS_TOKEN;
+  let phoneNumberId = getPhoneNumberId();
+  let accessToken = getAccessToken();
 
   if (clinicId) {
     try {
