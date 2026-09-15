@@ -1040,7 +1040,13 @@ export function buildMissingDataReply(booking: any): string {
   if (!b.correo) {
     return 'Solo me falta tu correo para dejar la reserva.\n\n¿Me lo compartes?';
   }
-  return 'Estoy terminando de registrar tu reserva. En un momento te confirmo.';
+  // Nada de "en un momento te confirmo": el agente no trabaja en segundo plano
+  // y esa confirmación no llegaría nunca. Si con todos los datos aún no se pudo
+  // reservar, lo honesto es decirlo y pasar la conversación al equipo.
+  return (
+    'Estoy teniendo un problema para dejar tu reserva registrada. ' +
+    'Le aviso al equipo de la clínica para que te confirmen la hora directamente.'
+  );
 }
 
 const DIAS_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];

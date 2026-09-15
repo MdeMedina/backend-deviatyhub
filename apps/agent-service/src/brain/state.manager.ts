@@ -33,6 +33,43 @@ export class StateManager {
     let nextStep: ConversationStep = currentStep;
     const booking = bookingState || {};
 
+    // Recuperación ante estados sin salida. Si ya están todos los datos, la
+    // reserva puede ejecutarse aunque la conversación haya quedado en un paso
+    // que no tiene transición, como 'human_takeover' tras liberar un takeover:
+    // la máquina no sabía salir de ahí y el agente seguía respondiendo sin
+    // poder agendar nunca, repitiéndole al paciente que ya casi está.
+    const datosCompletos =
+      booking.procedimiento_id &&
+      booking.fecha &&
+      booking.hora &&
+      booking.Nombre &&
+      booking.Apellido &&
+      booking.correo;
+
+    const pasoConocido: ConversationStep[] = [
+      'inicio',
+      'esperando_tratamiento',
+      'esperando_fecha',
+      'esperando_horario',
+      'esperando_datos_personales',
+      'listo_para_ejecucion',
+    ];
+
+    if (datosCompletos && currentStep !== 'concluido' && currentStep !== 'listo_para_ejecucion') {
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: { currentStep: 'listo_para_ejecucion' },
+      });
+      return 'listo_para_ejecucion';
+    }
+
+    // Si el paso guardado no pertenece a la máquina, se vuelve al inicio en vez
+    // de quedarse bloqueado indefinidamente.
+    if (!pasoConocido.includes(currentStep)) {
+      currentStep = 'inicio';
+      nextStep = 'inicio';
+    }
+
     // Máquina de estados con guardas de validación basadas en datos reales
     switch (currentStep) {
       case 'inicio':

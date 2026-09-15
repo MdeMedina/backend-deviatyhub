@@ -125,11 +125,18 @@ export class ConversationService {
   async release(clinicId: string, id: string) {
     await this.findOne(clinicId, id);
 
+    // Al escalar, el flujo queda marcado como 'human_takeover', un paso que la
+    // máquina de estados no sabe continuar. Devolver solo el status dejaba la
+    // conversación abierta pero incapaz de completar una reserva para siempre.
+    const conversation = await this.prisma.conversation.findUnique({ where: { id } });
+    const stepAtascado = conversation?.currentStep === 'human_takeover' || !conversation?.currentStep;
+
     const updated = await this.prisma.conversation.update({
       where: { id },
       data: {
         status: 'OPEN',
         assignedUserId: null,
+        ...(stepAtascado ? { currentStep: 'inicio' } : {}),
       },
     });
 
