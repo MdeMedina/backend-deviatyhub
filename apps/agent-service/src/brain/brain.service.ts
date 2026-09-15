@@ -107,13 +107,18 @@ export class BrainService {
     const allTools = [
       new DynamicStructuredTool({
         name: 'check_availability',
-        description: 'Usa esta herramienta cuando el paciente pida una cita o pregunte por horarios para un día específico.',
+        description:
+          'Consulta la agenda de un día. Si el paciente pidió una hora concreta, pásala en "time" y la herramienta te dirá si está libre; no deduzcas la disponibilidad por tu cuenta.',
         schema: z.object({
           date: z.string().describe('Fecha en formato ISO (YYYY-MM-DD)'),
           treatment_id: z.string().optional().describe('ID del tratamiento para validar la duración (opcional)'),
           doctor_id: z.string().optional().describe('ID del doctor específico si el paciente prefiere uno (opcional)'),
+          time: z
+            .string()
+            .optional()
+            .describe('Hora concreta HH:MM que pidió el paciente. Si la pasas, la respuesta dice si esa hora está libre.'),
         }),
-        func: async ({ date, treatment_id, doctor_id }) => {
+        func: async ({ date, treatment_id, doctor_id, time }) => {
           try {
             const [year, month, day] = date.split('-').map(Number);
             const localDate = new Date(year, month - 1, day);
@@ -124,7 +129,21 @@ export class BrainService {
               doctor_id
             );
             if (slots.length === 0) return 'No hay disponibilidad para ese día con los criterios especificados.';
-            return `Horarios disponibles (mínimo 3 sugeridos): ${slots.join(', ')}`;
+
+            // Cuando el paciente pidió una hora concreta, la herramienta
+            // responde por sí o por no. Antes se devolvía siempre la lista
+            // completa y el modelo decidía mirándola; como además tiene orden
+            // de mostrar como mucho 5 opciones, llegó a dar por ocupada una
+            // hora que sí estaba libre solo porque no entraba en ese recorte.
+            if (time) {
+              const pedida = time.trim();
+              if (slots.includes(pedida)) {
+                return `CONFIRMADO: la hora ${pedida} está DISPONIBLE. Dala por buena y continúa con el siguiente dato que falte.`;
+              }
+              return `La hora ${pedida} NO está disponible. Otras horas libres ese día: ${slots.join(', ')}`;
+            }
+
+            return `Horarios disponibles ese día: ${slots.join(', ')}`;
           } catch (e) {
             // Política de usuario: Escalar de inmediato si falla el tool
             await this.humanTool.escalate(params.conversationId, `Error en AvailabilityTool: ${(e as Error).message}`);
@@ -506,7 +525,8 @@ export class BrainService {
       4. Nombre, Apellido y correo del paciente.
       - Mira el ESTADO DE AGENDAMIENTO PERSISTIDO y pide SOLO el primer dato que falte, uno por mensaje.
       - Antes de pedir cualquier dato, repasa TODO el historial de la conversación: si el paciente ya lo dijo en algún mensaje anterior, rellénalo en el JSON y no lo vuelvas a preguntar.
-      - Si el paciente ya indicó una hora concreta, NO le ofrezcas la lista de horarios disponibles. Usa 'check_availability' solo para comprobar que esa hora esté libre: si lo está, dala por buena y pasa al siguiente dato que falte; solo si NO está libre le ofreces alternativas. Enseñarle un listado donde aparece la hora que él mismo acaba de pedir es hacerle elegir dos veces lo mismo.
+      - REGLA INVIOLABLE: solo puedes rellenar un campo con lo que el paciente haya dicho de forma explícita. Tienes PROHIBIDO elegir por él. Si le ofreciste varias horas y aún no ha escogido ninguna, "hora" se queda VACÍO aunque te haya dado su nombre o su correo: nunca tomes la primera de la lista por defecto. Reservarle una hora que no eligió es peor que no reservarle nada.
+      - Si el paciente ya indicó una hora concreta, NO le ofrezcas la lista de horarios disponibles. Invoca 'check_availability' pasando esa hora en el parámetro "time": la herramienta te responde si está libre o no. Fíate de esa respuesta y no deduzcas la disponibilidad mirando una lista, porque solo muestras una parte de las horas libres y podrías dar por ocupada una que sí está disponible. Enseñarle un listado donde aparece la hora que él mismo acaba de pedir es hacerle elegir dos veces lo mismo.
       - ORDEN OBLIGATORIO: esta regla se aplica DESPUÉS de haber fijado la fecha. Si el día todavía es relativo y sin confirmar ("mañana", "el lunes"), manda la REGLA DE ORO PARA FECHAS RELATIVAS: ese turno solo puede pedir la confirmación del día, sin consultar disponibilidad y sin pedir ningún otro dato. Solo cuando el paciente confirme el día pasas a comprobar la hora y a pedir lo que falte.
       - Si el paciente pide hora sin decir para qué tratamiento, pregúntaselo ANTES de ofrecer horarios: la duración de la reserva depende del tratamiento, así que sin él los horarios que muestres pueden no ser válidos.
       - El correo es obligatorio para cerrar la reserva. Pídelo junto con el nombre y el apellido.
