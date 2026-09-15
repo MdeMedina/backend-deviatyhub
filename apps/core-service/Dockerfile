@@ -20,6 +20,10 @@ RUN cd packages/shared-prisma && npx prisma generate
 # Stage 3: Runner
 FROM node:20-alpine AS runner
 WORKDIR /app
+# Alpine no trae la base de zonas horarias: sin tzdata, la variable TZ se
+# ignora en silencio y el proceso se queda en UTC. La clínica opera en
+# Santiago y el cálculo de horarios depende de la hora local.
+RUN apk add --no-cache tzdata
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
 USER nestjs
