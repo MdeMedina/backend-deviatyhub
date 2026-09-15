@@ -654,7 +654,7 @@ export class BrainService {
     }
 
     return {
-      text: replyText,
+      text: sanitizeReply(replyText),
       currentStep: finalStep,
       intent: classification.intent,
       certainty: classification.confidence,
@@ -731,4 +731,25 @@ export class BrainService {
       reply: `¡Listo! Tu cita de ${treatment.name} quedó agendada para el ${booking.fecha} a las ${booking.hora}. Si necesitas modificarla o cancelarla, avísame.`,
     };
   }
+}
+
+/**
+ * Última pasada sobre el texto que ve el paciente.
+ *
+ * El prompt prohíbe "te gustaría" por sonar a formulario traducido, pero una
+ * prohibición léxica en el prompt es probabilística: se cumple casi siempre y
+ * falla sin avisar. Para una regla determinista como esta, el sitio correcto
+ * es el código.
+ *
+ * Solo se sustituye esta expresión, y por "quieres", que encaja en las mismas
+ * construcciones ("¿te gustaría agendar?" -> "¿quieres agendar?"). No se toca
+ * "cita": cambiarla por "hora" automáticamente rompería frases como "cita
+ * previa" o alteraría el sentido según el contexto, y ahí el prompt es el
+ * lugar adecuado.
+ */
+export function sanitizeReply(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/\bTe gustaría\b/g, 'Quieres')
+    .replace(/\bte gustaría\b/g, 'quieres');
 }
