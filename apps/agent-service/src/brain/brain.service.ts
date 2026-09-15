@@ -733,6 +733,29 @@ export class BrainService {
         }
       }
 
+      // 7.b Elección de especialista, en su momento y no al final.
+      //     Con tratamiento, fecha y hora ya fijados, si el tratamiento lo
+      //     atienden varios y hay más de uno libre a esa hora, hay que
+      //     preguntar. Se hace aquí y no en el prompt porque el modelo sigue el
+      //     paso del flujo antes que una instrucción de texto: pedía el nombre
+      //     y el correo y recién al agendar aparecía la pregunta del doctor,
+      //     obligando al paciente a dar todos sus datos para nada.
+      if (
+        finalStep !== 'concluido' &&
+        currentBooking.procedimiento_id &&
+        currentBooking.fecha &&
+        currentBooking.hora &&
+        !currentBooking.doctor_id
+      ) {
+        const preguntaDoctor = await this.askDoctorIfAmbiguous(
+          params.clinicId,
+          currentBooking,
+        );
+        if (preguntaDoctor) {
+          replyText = preguntaDoctor;
+        }
+      }
+
       // 8. Guardarraíl: el modelo no puede dar por hecha una reserva que el
       //    sistema no ejecutó. Solo executeScheduling confirma, y ese camino ya
       //    sustituye el texto; si llegamos aquí sin 'concluido', la cita no
@@ -843,6 +866,47 @@ export class BrainService {
     return {
       reply: `Para ${treatment.name} a las *${hora}* tengo disponibles a:\n\n${listado}\n\n¿Con cuál prefieres?`,
     };
+  }
+
+  /**
+   * Devuelve la pregunta por el especialista solo si de verdad hay que elegir:
+   * varios profesionales atienden ese tratamiento y más de uno está libre a esa
+   * hora. Si no hay ambigüedad devuelve null y el sistema asigna solo.
+   */
+  private async askDoctorIfAmbiguous(clinicId: string, booking: any): Promise<string | null> {
+    try {
+      const scheduledAt = this.parseBookingDateTime(booking.fecha, booking.hora);
+      if (!scheduledAt) return null;
+
+      const treatment = await this.prisma.treatment.findFirst({
+        where: { id: booking.procedimiento_id, clinicId },
+        include: { doctors: { include: { doctor: true } } },
+      });
+      if (!treatment) return null;
+
+      const candidatos = (treatment.doctors || [])
+        .filter((dt: any) => dt.doctor && dt.doctor.active !== false)
+        .map((dt: any) => ({ id: dt.doctor.id, name: dt.doctor.name }));
+      if (candidatos.length < 2) return null;
+
+      const libres: { id: string; name: string }[] = [];
+      for (const c of candidatos) {
+        const slots = await this.availabilityTool.getAvailableSlots(
+          clinicId,
+          scheduledAt,
+          treatment.id,
+          c.id,
+        );
+        if (slots.includes(String(booking.hora).trim())) libres.push(c);
+      }
+      if (libres.length < 2) return null;
+
+      const listado = libres.map((d) => `- ${d.name}`).join('\n');
+      return `Para *${treatment.name}* a las *${booking.hora}* puedo agendarte con:\n\n${listado}\n\n¿Con cuál prefieres?`;
+    } catch (e) {
+      this.logger.warn(`No se pudo resolver la pregunta de especialista: ${(e as Error).message}`);
+      return null;
+    }
   }
 
   private parseBookingDateTime(fecha?: string, hora?: string): Date | null {
