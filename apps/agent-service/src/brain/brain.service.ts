@@ -61,6 +61,7 @@ export class BrainService {
       Apellido?: string;
       correo?: string;
       cita_id?: string;
+      doctor_id?: string;
     };
 
     const bookingStateBlock = `ESTADO DE AGENDAMIENTO PERSISTIDO EN BASE DE DATOS:
@@ -70,7 +71,8 @@ export class BrainService {
 - Hora agendada (hora): ${bookingState.hora || 'vacío'}
 - Nombre paciente (Nombre): ${bookingState.Nombre || 'vacío'}
 - Apellido paciente (Apellido): ${bookingState.Apellido || 'vacío'}
-- Correo electrónico (correo): ${bookingState.correo || 'vacío'}`;
+- Correo electrónico (correo): ${bookingState.correo || 'vacío'}
+- Especialista elegido (doctor_id): ${bookingState.doctor_id || 'vacío (lo asigna el sistema)'}`;
 
     // 1. Clasificar Intención (MVP simple antes del bucle de agente)
     const classification = await this.classifier.classify(params.userInput);
@@ -505,6 +507,7 @@ export class BrainService {
       - Mira el ESTADO DE AGENDAMIENTO PERSISTIDO y pide SOLO el primer dato que falte, uno por mensaje.
       - Si el paciente pide hora sin decir para qué tratamiento, pregúntaselo ANTES de ofrecer horarios: la duración de la reserva depende del tratamiento, así que sin él los horarios que muestres pueden no ser válidos.
       - El correo es obligatorio para cerrar la reserva. Pídelo junto con el nombre y el apellido.
+      - NO preguntes por el especialista: lo asigna el sistema según quién haga ese tratamiento y esté libre a esa hora. Solo si el paciente nombra a un doctor por iniciativa propia, guarda su UUID en "doctor_id"; si no, déjalo vacío. Si hay varios libres y hace falta elegir, el propio sistema te lo pedirá.
 
       🚫 TIENES PROHIBIDO ANUNCIAR LA CITA COMO YA AGENDADA:
       - Tú no agendas. La reserva la ejecuta el sistema cuando están todos los datos anteriores, y es el sistema quien envía la confirmación final.
@@ -527,10 +530,11 @@ export class BrainService {
         "Nombre": "Nombre del paciente o vacío",
         "Apellido": "Apellido del paciente o vacío",
         "correo": "correo del paciente o vacío",
+        "doctor_id": "El UUID del especialista SOLO si el paciente eligió uno de la lista de Doctores Disponibles; en cualquier otro caso, vacío",
         "paso": "el_paso_actual (debe coincidir con ESTADO ACTUAL DEL FLUJO o avanzar según las reglas)"
       }}
       
-      * El formato de WhatsApp (asteriscos, guiones, saltos de línea) va exclusivamente en "reply". Todos los demás campos del JSON ("action", "fecha", "hora", "procedimiento_id", "cita_id", "Nombre", "Apellido", "correo", "paso") van en texto plano, sin asteriscos y sin saltos de línea. Nunca formatees ni acortes un UUID.
+      * El formato de WhatsApp (asteriscos, guiones, saltos de línea) va exclusivamente en "reply". Todos los demás campos del JSON ("action", "fecha", "hora", "procedimiento_id", "cita_id", "Nombre", "Apellido", "correo", "doctor_id", "paso") van en texto plano, sin asteriscos y sin saltos de línea. Nunca formatees ni acortes un UUID.
       * Preserva siempre los valores del ESTADO DE AGENDAMIENTO PERSISTIDO EN BASE DE DATOS. Si un campo ya tiene un valor en el estado, cópialo exactamente igual en tu respuesta JSON; no lo dejes vacío o lo borrarás de la base de datos.
       `],
       new MessagesPlaceholder('chat_history'),
@@ -599,6 +603,9 @@ export class BrainService {
         Nombre: parsedJson.Nombre || existingMetadata.booking?.Nombre || '',
         Apellido: parsedJson.Apellido || existingMetadata.booking?.Apellido || '',
         correo: parsedJson.correo || existingMetadata.booking?.correo || '',
+        // Solo se usa cuando el paciente elige especialista; si va vacío, el
+        // sistema lo asigna por disponibilidad.
+        doctor_id: parsedJson.doctor_id || existingMetadata.booking?.doctor_id || '',
       };
       
       await this.prisma.conversation.update({
@@ -690,6 +697,95 @@ export class BrainService {
     };
   }
 
+  /**
+   * Elige el especialista de forma determinista.
+   *
+   * Antes se tomaba sin más el primer doctor vinculado al tratamiento, sin
+   * comprobar si estaba libre: se podían crear dos citas solapadas al mismo
+   * especialista.
+   *
+   * Reglas:
+   *  - Si el paciente ya eligió uno, se respeta (validando que haga ese
+   *    tratamiento y esté libre).
+   *  - Si el tratamiento lo hace un solo doctor, se asigna.
+   *  - Si lo hacen varios, se mira quién está libre a esa hora. Si solo queda
+   *    uno, se asigna sin preguntar: la disponibilidad ya deshizo la ambigüedad.
+   *  - Solo se pregunta cuando hay más de uno libre y la elección es real.
+   */
+  private async selectDoctor(
+    clinicId: string,
+    treatment: any,
+    scheduledAt: Date,
+    booking: any,
+  ): Promise<{ doctorId?: string; doctorName?: string; reply?: string }> {
+    const hora = String(booking?.hora || '').trim();
+
+    const candidatos: { id: string; name: string }[] = (treatment.doctors || [])
+      .filter((dt: any) => dt.doctor && dt.doctor.active !== false)
+      .map((dt: any) => ({ id: dt.doctor.id, name: dt.doctor.name }));
+
+    if (candidatos.length === 0) {
+      return {
+        reply: `Ahora mismo no tengo especialista asignado para ${treatment.name}. Le paso tu solicitud al equipo para que te contacte.`,
+      };
+    }
+
+    const estaLibre = async (doctorId: string) => {
+      const slots = await this.availabilityTool.getAvailableSlots(
+        clinicId,
+        scheduledAt,
+        treatment.id,
+        doctorId,
+      );
+      return slots.includes(hora);
+    };
+
+    // El paciente pidió un especialista concreto.
+    if (booking?.doctor_id) {
+      const elegido = candidatos.find((d) => d.id === booking.doctor_id);
+      if (!elegido) {
+        return {
+          reply: `Ese especialista no atiende ${treatment.name}. ¿Quieres que te asigne uno que sí lo haga?`,
+        };
+      }
+      if (!(await estaLibre(elegido.id))) {
+        return {
+          reply: `${elegido.name} no tiene libre las *${hora}*. ¿Prefieres otra hora con ${elegido.name}, o que te asigne otro especialista?`,
+        };
+      }
+      return { doctorId: elegido.id, doctorName: elegido.name };
+    }
+
+    if (candidatos.length === 1) {
+      const unico = candidatos[0];
+      if (!(await estaLibre(unico.id))) {
+        return {
+          reply: `Las *${hora}* ya no están disponibles para ${treatment.name}. ¿Quieres que busque otra hora?`,
+        };
+      }
+      return { doctorId: unico.id, doctorName: unico.name };
+    }
+
+    const libres: { id: string; name: string }[] = [];
+    for (const c of candidatos) {
+      if (await estaLibre(c.id)) libres.push(c);
+    }
+
+    if (libres.length === 0) {
+      return {
+        reply: `Las *${hora}* ya no están disponibles para ${treatment.name}. ¿Quieres que busque otra hora?`,
+      };
+    }
+    if (libres.length === 1) {
+      return { doctorId: libres[0].id, doctorName: libres[0].name };
+    }
+
+    const listado = libres.map((d) => `- ${d.name}`).join('\n');
+    return {
+      reply: `Para ${treatment.name} a las *${hora}* tengo disponibles a:\n\n${listado}\n\n¿Con cuál prefieres?`,
+    };
+  }
+
   private parseBookingDateTime(fecha?: string, hora?: string): Date | null {
     if (!fecha || !hora) return null;
     let y: number, m: number, d: number;
@@ -722,19 +818,16 @@ export class BrainService {
       return { success: false, reply: 'No pude encontrar ese tratamiento en el catálogo de la clínica.' };
     }
 
-    let doctorId = treatment.doctors?.find((dt: any) => dt.doctor?.active !== false)?.doctorId;
-    if (!doctorId) {
-      const anyDoctor = await this.prisma.doctor.findFirst({ where: { clinicId, active: true } });
-      doctorId = anyDoctor?.id;
-    }
-    if (!doctorId) {
-      return { success: false, reply: 'No hay especialistas disponibles para agendar en este momento.' };
-    }
-
     const scheduledAt = this.parseBookingDateTime(booking.fecha, booking.hora);
     if (!scheduledAt) {
       return { success: false, reply: 'La fecha u hora de la cita no son válidas. ¿Podrías confirmarlas?' };
     }
+
+    const seleccion = await this.selectDoctor(clinicId, treatment, scheduledAt, booking);
+    if (!seleccion.doctorId) {
+      return { success: false, reply: seleccion.reply! };
+    }
+    const doctorId = seleccion.doctorId;
 
     const durationMin = (treatment as any).durationMin ?? treatment.durationAvgMin ?? 30;
     const contactName =
@@ -754,9 +847,16 @@ export class BrainService {
       return { success: false, reply: `Ese horario ya no está disponible. ¿Quieres que busque otro para ${treatment.name}?` };
     }
 
+    // Esta es la única confirmación real de una reserva, así que sigue las
+    // mismas reglas de estilo que el resto: "hora" y no "cita", fecha en
+    // formato humano y el dato clave en negrita.
+    const conEspecialista = seleccion.doctorName ? ` con *${seleccion.doctorName}*` : '';
     return {
       success: true,
-      reply: `¡Listo! Tu cita de ${treatment.name} quedó agendada para el ${booking.fecha} a las ${booking.hora}. Si necesitas modificarla o cancelarla, avísame.`,
+      reply:
+        `¡Listo! Tu hora de *${treatment.name}* quedó agendada para el ` +
+        `*${formatFechaHumana(scheduledAt)}* a las *${booking.hora}*${conEspecialista}.` +
+        `\n\nSi necesitas cambiarla o cancelarla, avísame.`,
     };
   }
 }
@@ -818,4 +918,15 @@ export function buildMissingDataReply(booking: any): string {
     return 'Solo me falta tu correo para dejar la reserva.\n\n¿Me lo compartes?';
   }
   return 'Estoy terminando de registrar tu reserva. En un momento te confirmo.';
+}
+
+const DIAS_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const MESES_ES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/** "miércoles 16 de septiembre". Sin año, igual que pide el prompt para el texto al paciente. */
+export function formatFechaHumana(date: Date): string {
+  return `${DIAS_ES[date.getDay()]} ${date.getDate()} de ${MESES_ES[date.getMonth()]}`;
 }
