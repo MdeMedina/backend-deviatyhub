@@ -1,15 +1,20 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, Logger } from '@nestjs/common';
 import { Prisma, PrismaService } from '@deviaty/shared-prisma';
+import { EventBus } from '@deviaty/shared-events';
 import { ConversationFilterDto } from './dto/conversation.dto';
 import { ConversationGateway } from './conversation.gateway';
 
 @Injectable()
 export class ConversationService {
+  private readonly logger = new Logger(ConversationService.name);
+
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
     @Inject(ConversationGateway)
-    private readonly gateway: ConversationGateway
+    private readonly gateway: ConversationGateway,
+    @Inject(EventBus)
+    private readonly eventBus: EventBus
   ) {}
 
   async findAll(clinicId: string, filters: ConversationFilterDto) {
@@ -163,6 +168,26 @@ export class ConversationService {
         content,
       },
     });
+
+    // Sin esto el mensaje solo se guardaba y se pintaba en el panel: el
+    // whatsapp-service escucha 'message.outbound' para enviarlo, así que el
+    // operador veía su respuesta en pantalla y el paciente no recibía nada.
+    const recipient = (conversation as any)?.contact?.phone || '';
+    if (recipient) {
+      await this.eventBus
+        .publish('message.outbound', {
+          conversationId: id,
+          clinicId,
+          recipient,
+          content,
+          channel: (conversation as any).channel,
+        })
+        .catch((e) =>
+          this.logger?.error?.(`No se pudo encolar el envío manual: ${(e as Error).message}`),
+        );
+    } else {
+      this.logger?.warn?.(`Conversación ${id} sin teléfono de contacto: el mensaje manual no se envía.`);
+    }
 
     this.gateway.emitEvent('conversation.message', {
       conversation_id: id,
