@@ -92,31 +92,37 @@ export class BrainService {
     const enMedioDeFlujo =
       !!params.currentStep && params.currentStep !== 'inicio' && params.currentStep !== 'concluido';
 
-    // 2. Gestionar Fallback (2 strikes) - Mantenemos la lógica de la Fase 6
-    if (classification.confidence < 0.8 && !enMedioDeFlujo) {
-      const retryCount = (params.metadata?.retry_count || 0) + 1;
-      if (retryCount >= 2) {
-        await this.humanTool.escalate(params.conversationId, 'Baja confianza en intención persistente');
-        return {
-          text: 'No te entiendo muy bien, te voy a derivar con uno de nuestros asesores.',
-          currentStep: 'human_takeover',
-          intent: classification.intent,
-          certainty: classification.confidence,
-          toolsUsed: ['escalate_to_human'],
-        };
-      }
+    // 2. La clasificación es una PISTA, no un portero.
+    //    Antes, una confianza baja devolvía "no entendí" y a los dos intentos
+    //    derivaba a un humano, todo ANTES de que el agente viera el mensaje. Y
+    //    el agente es justamente lo único capaz de entenderlo: tiene el
+    //    historial completo, el contexto de la clínica y las herramientas. Un
+    //    reclamo, un mensaje con faltas de ortografía o una pregunta fuera del
+    //    catálogo de intenciones caían todos en el mismo corte. Ahora el turno
+    //    siempre llega al agente; derivar es decisión suya vía 'escalate_to_human'.
+    const mensajeAmbiguo = classification.confidence < 0.6 && !enMedioDeFlujo;
+
+    // Intentos ambiguos SEGUIDOS. Se reinicia en cuanto se entiende algo, para
+    // que no se vayan acumulando a lo largo de una conversación por lo demás normal.
+    const intentosPrevios = Number(params.metadata?.retry_count || 0);
+    const intentosAmbiguos = mensajeAmbiguo ? intentosPrevios + 1 : 0;
+    if (intentosPrevios !== intentosAmbiguos) {
       await this.prisma.conversation.update({
         where: { id: params.conversationId },
-        data: { metadata: { ...params.metadata, retry_count: retryCount } }
+        data: { metadata: { ...params.metadata, retry_count: intentosAmbiguos } },
       });
-      return {
-        text: 'Disculpa, no entendí del todo tu solicitud. ¿Podrías explicármelo de otra forma?',
-        currentStep: params.currentStep,
-        intent: classification.intent,
-        certainty: classification.confidence,
-        toolsUsed: [],
-      };
     }
+
+    const ambiguityBlock = mensajeAmbiguo
+      ? `🤔 ESTE MENSAJE NO ENCAJÓ EN NINGUNA INTENCIÓN CONOCIDA (intento ${intentosAmbiguos} de 3):
+      El clasificador no supo etiquetarlo, pero eso NO significa que no se pueda entender. Entenderlo es tu trabajo:
+      - Reléelo asumiendo faltas de ortografía, palabras pegadas o abreviaturas: "endodocia" es endodoncia, "q hora" es "qué hora", "resoeto" es respeto. Interpreta lo que el paciente quiso escribir, no lo que escribió literal.
+      - Léelo junto al historial: casi siempre es una respuesta o una reacción a lo último que dijiste tú.
+      - Puede ser un reclamo o un comentario sobre la atención recibida. Si lo es, respóndelo como persona: hazte cargo en una línea y retoma donde estaban. No lo trates como una solicitud que no encaja.
+      - Si con eso te formas una hipótesis razonable, ACTÚA sobre ella y confírmala de paso. Ejemplo: "Entiendo que buscas hora para *endodoncia*, ¿es así?".
+      - Solo si de verdad no logras ninguna hipótesis, pregunta por el dato concreto que te falta citando lo que el paciente escribió. TIENES PROHIBIDO responder "no entendí tu solicitud, explícamelo de otra forma": eso le devuelve el problema al paciente sin haber intentado nada.
+      - Si este es el intento 3 y sigues sin entender, ahí sí usa 'escalate_to_human'.`
+      : '';
 
     // 3. Definir HERRAMIENTAS para el Agente
     const allTools = [
@@ -268,7 +274,8 @@ export class BrainService {
       }),
       new DynamicStructuredTool({
         name: 'escalate_to_human',
-        description: 'Usa esta herramienta cuando el paciente pida hablar con una persona, tenga una urgencia dental grave o esté molesto.',
+        description:
+          'Deriva la conversación a una persona del equipo. Úsala SOLO si el paciente pide hablar con alguien, hay una urgencia dental grave, está molesto y no logras resolverlo, o ya llevas 3 intentos seguidos sin conseguir entender qué necesita. No la uses porque un mensaje venga confuso o mal escrito: primero intenta interpretarlo.',
         schema: z.object({
           reason: z.string().describe('Razón de la escalada'),
         }),
@@ -550,6 +557,8 @@ export class BrainService {
       ESTADO ACTUAL DEL FLUJO: {currentStep}
       INTENCIÓN DETECTADA: {intent}
 
+      {ambiguityBlock}
+
       📋 DATOS NECESARIOS PARA AGENDAR. Se piden en este orden y no se puede reservar sin todos:
       1. Tratamiento: rellena "procedimiento_id" con el UUID que aparece entre corchetes como [ID: ...] en la lista de Tratamientos y Precios. Nunca pongas ahí el nombre del tratamiento.
       2. Fecha: campo "fecha", formato DD/MM/YYYY.
@@ -633,6 +642,7 @@ export class BrainService {
       currentDayOfWeek,
       bookingStateBlock,
       supervisedBlock,
+      ambiguityBlock,
     });
 
     const toolsUsed: string[] = Array.isArray((response as any).intermediateSteps)
