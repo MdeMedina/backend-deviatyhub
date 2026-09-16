@@ -53,6 +53,21 @@ export class BrainService {
     const currentTime = format(nowLocal, 'HH:mm');
     const currentDayOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][nowLocal.getDay()];
 
+    // Una conversación que ya terminó su reserva vuelve a empezar de cero. Sin
+    // esto, los datos de la reserva anterior seguían en metadata y cualquier
+    // mensaje posterior ("hola") se interpretaba como la continuación de aquella:
+    // el sistema reintentaba agendar una fecha ya pasada y respondía cosas como
+    // "el Dr. X no tiene libre las 16:30" a un saludo.
+    if (params.currentStep === 'concluido' && params.metadata?.booking) {
+      this.logger.log(`Conversación ${params.conversationId} ya concluida: se limpia la reserva anterior y se reinicia el flujo.`);
+      params.metadata = { ...params.metadata, booking: {} };
+      params.currentStep = 'inicio';
+      await this.prisma.conversation.update({
+        where: { id: params.conversationId },
+        data: { metadata: params.metadata, currentStep: 'inicio' },
+      });
+    }
+
     const bookingState = (params.metadata?.booking || {}) as {
       fecha?: string;
       hora?: string;
@@ -733,7 +748,10 @@ export class BrainService {
           replyText = `[SIMULADO] Tu cita quedó agendada para el ${currentBooking.fecha || ''} a las ${currentBooking.hora || ''}.`;
           await this.prisma.conversation.update({
             where: { id: params.conversationId },
-            data: { currentStep: 'concluido' },
+            data: {
+              currentStep: 'concluido',
+              metadata: { ...(existingMetadataAfter?.metadata as any), booking: {} },
+            },
           });
           finalStep = 'concluido';
         } else {
@@ -746,11 +764,33 @@ export class BrainService {
             );
             replyText = scheduled.reply;
             if (scheduled.success) {
+              // La reserva ya existe: los datos dejan de ser una solicitud
+              // pendiente y hay que borrarlos. Si se quedan, cualquier mensaje
+              // posterior los revive y el sistema intenta agendarlos otra vez.
               await this.prisma.conversation.update({
                 where: { id: params.conversationId },
-                data: { currentStep: 'concluido' },
+                data: {
+                  currentStep: 'concluido',
+                  metadata: { ...(existingMetadataAfter?.metadata as any), booking: {} },
+                },
               });
               finalStep = 'concluido';
+            } else if (scheduled.retryStep) {
+              // Se retrocede al paso que corresponde y se olvidan los datos que
+              // provocaron el fallo, para no quedarse reintentando lo mismo.
+              const bookingDepurado = { ...currentBooking };
+              for (const campo of scheduled.clearFields || []) {
+                bookingDepurado[campo] = '';
+              }
+              await this.prisma.conversation.update({
+                where: { id: params.conversationId },
+                data: {
+                  currentStep: scheduled.retryStep,
+                  metadata: { ...(existingMetadataAfter?.metadata as any), booking: bookingDepurado },
+                },
+              });
+              finalStep = scheduled.retryStep;
+              Object.assign(currentBooking, bookingDepurado);
             }
           } catch (e) {
             this.logger.error(`Error al agendar la cita: ${(e as Error).message}`);
@@ -956,9 +996,21 @@ export class BrainService {
     conversationId: string,
     contact: any,
     booking: any,
-  ): Promise<{ success: boolean; reply: string }> {
+  ): Promise<{
+    success: boolean;
+    reply: string;
+    // Adónde volver y qué olvidar cuando la reserva no se pudo ejecutar. Sin
+    // esto la conversación se quedaba en 'listo_para_ejecucion' reintentando
+    // los mismos datos en cada mensaje y repitiendo la misma frase al paciente.
+    retryStep?: ConversationStep;
+    clearFields?: string[];
+  }> {
     if (!booking?.procedimiento_id) {
-      return { success: false, reply: 'No pude identificar el tratamiento para agendar. ¿Cuál necesitas?' };
+      return {
+        success: false,
+        reply: 'No pude identificar el tratamiento para agendar. ¿Cuál necesitas?',
+        retryStep: 'esperando_tratamiento',
+      };
     }
 
     const treatment = await this.prisma.treatment.findFirst({
@@ -966,17 +1018,49 @@ export class BrainService {
       include: { doctors: { include: { doctor: true } } },
     });
     if (!treatment) {
-      return { success: false, reply: 'No pude encontrar ese tratamiento en el catálogo de la clínica.' };
+      return {
+        success: false,
+        reply: 'No pude encontrar ese tratamiento en el catálogo de la clínica.',
+        retryStep: 'esperando_tratamiento',
+        clearFields: ['procedimiento_id'],
+      };
     }
 
     const scheduledAt = this.parseBookingDateTime(booking.fecha, booking.hora);
     if (!scheduledAt) {
-      return { success: false, reply: 'La fecha u hora de la cita no son válidas. ¿Podrías confirmarlas?' };
+      return {
+        success: false,
+        reply: 'La fecha u hora de la cita no son válidas. ¿Podrías confirmarlas?',
+        retryStep: 'esperando_fecha',
+        clearFields: ['fecha', 'hora'],
+      };
+    }
+
+    // Una fecha ya pasada solo puede venir de un estado viejo arrastrado. Nunca
+    // se la mencionamos al paciente como si la hubiera pedido ahora.
+    if (scheduledAt.getTime() < Date.now()) {
+      this.logger.warn(
+        `Reserva descartada por fecha pasada (${booking.fecha} ${booking.hora}) en la conversación ${conversationId}.`,
+      );
+      return {
+        success: false,
+        reply: `¿Para qué día te acomoda la hora de *${treatment.name}*?`,
+        retryStep: 'esperando_fecha',
+        clearFields: ['fecha', 'hora', 'doctor_id'],
+      };
     }
 
     const seleccion = await this.selectDoctor(clinicId, treatment, scheduledAt, booking);
     if (!seleccion.doctorId) {
-      return { success: false, reply: seleccion.reply! };
+      // El especialista o la hora no sirven. Se olvidan ambos para que la
+      // respuesta del paciente ("otra hora", "otro especialista") pueda cambiar
+      // algo; si se conservan, el siguiente mensaje repite esta misma frase.
+      return {
+        success: false,
+        reply: seleccion.reply!,
+        retryStep: 'esperando_horario',
+        clearFields: ['hora', 'doctor_id'],
+      };
     }
     const doctorId = seleccion.doctorId;
 
@@ -995,7 +1079,12 @@ export class BrainService {
     });
 
     if (!res.success) {
-      return { success: false, reply: `Ese horario ya no está disponible. ¿Quieres que busque otro para ${treatment.name}?` };
+      return {
+        success: false,
+        reply: `Ese horario ya no está disponible. ¿Quieres que busque otro para ${treatment.name}?`,
+        retryStep: 'esperando_horario',
+        clearFields: ['hora', 'doctor_id'],
+      };
     }
 
     // Esta es la única confirmación real de una reserva, así que sigue las
