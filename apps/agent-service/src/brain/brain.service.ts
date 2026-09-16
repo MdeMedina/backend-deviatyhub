@@ -6,7 +6,7 @@ import { AgentExecutor, createOpenAIFunctionsAgent } from 'langchain/agents';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
-import { IntentionClassifier } from './intention.classifier';
+import { IntentionClassifier, Intent } from './intention.classifier';
 import { StateManager, ConversationStep } from './state.manager';
 import { AvailabilityTool } from '../tools/availability.tool';
 import { HumanTool } from '../tools/human.tool';
@@ -280,6 +280,24 @@ export class BrainService {
           reason: z.string().describe('Razón de la escalada'),
         }),
         func: async ({ reason }) => {
+          // El permiso para derivar NO se deja al criterio del modelo. Con la
+          // descripción sola, el agente derivaba ante un "ya po y entonces q":
+          // un mensaje vago, no una persona pidiendo ayuda. Derivar de más es
+          // tan malo como no entender, porque deja al paciente esperando a
+          // alguien que quizá no esté. Solo pasan tres casos objetivos.
+          const puedeDerivar =
+            pideHumanoExplicitamente(params.userInput) ||
+            esUrgenciaDental(params.userInput) ||
+            classification.intent === Intent.URGENCIA ||
+            intentosAmbiguos >= 3;
+
+          if (!puedeDerivar) {
+            this.logger.warn(
+              `Derivación bloqueada (no la pidió el paciente, no es urgencia y van ${intentosAmbiguos} intentos). Motivo alegado: ${reason}`,
+            );
+            return 'DERIVACION_NO_AUTORIZADA: el paciente no ha pedido hablar con una persona y esto no es una urgencia. Resuélvelo tú. Si el mensaje viene confuso, interprétalo o pregunta por lo concreto que te falta citando lo que escribió. No le anuncies que lo vas a derivar.';
+          }
+
           return await this.humanTool.escalate(params.conversationId, reason);
         },
       }),
@@ -1008,6 +1026,35 @@ export class BrainService {
  * previa" o alteraría el sentido según el contexto, y ahí el prompt es el
  * lugar adecuado.
  */
+/**
+ * ¿El paciente pidió EXPLÍCITAMENTE hablar con una persona?
+ * Se normalizan acentos para que "recepcion" y "recepción" pesen igual.
+ */
+export function pideHumanoExplicitamente(text: string): boolean {
+  const t = (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return /\b(hablar|habla|comunicar|comunicame|contactar|pasame|paseme|derivame|deriveme|atienda|atiendame)\b[\s\S]{0,30}\b(persona|humano|humana|asesor|asesora|ejecutivo|ejecutiva|operador|operadora|secretaria|recepcion|alguien|doctor|dentista)\b/.test(t)
+    || /\b(quiero|necesito|puedo|prefiero)\b[\s\S]{0,25}\b(hablar|habla)\b[\s\S]{0,25}\b(persona|humano|humana|asesor|alguien|real)\b/.test(t)
+    || /\b(un|una)\s+(humano|humana|persona\s+real|asesor|asesora|ejecutivo|ejecutiva)\b/.test(t)
+    || /\bno\s+(quiero|kiero)\s+(hablar\s+con\s+)?(un\s+)?(bot|robot|maquina|maquinita|ia)\b/.test(t);
+}
+
+/** Señales de urgencia dental que justifican pasar a una persona sin más trámite. */
+export function esUrgenciaDental(text: string): boolean {
+  const t = (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return /\b(urgencia|urgente|emergencia)\b/.test(t)
+    || /\bno\s+(aguanto|soporto|puedo\s+mas)\b/.test(t)
+    || /\b(sangra|sangrando|sangrado|hemorragia)\b/.test(t)
+    || /\b(se\s+me\s+)?(cayo|quebro|rompio|partio)\b[\s\S]{0,20}\b(diente|muela|corona|pieza)\b/.test(t)
+    || /\bdolor\b[\s\S]{0,20}\b(insoportable|fuerte|terrible|horrible|agudo)\b/.test(t)
+    || /\b(hinch\w*|inflamad[oa]|absceso|flegmon|flemon)\b/.test(t);
+}
+
 export function sanitizeReply(text: string): string {
   if (!text) return text;
   return text
