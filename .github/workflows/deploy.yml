@@ -88,6 +88,15 @@ jobs:
             echo "==> Levantando servicios (redis, postgres, microservicios)"
             docker compose up -d
 
+            echo "==> SQL previo (idempotente)"
+            # Cambios que `db push` rechaza por considerarlos potencialmente
+            # destructivos. Se aplican aquí de forma explícita en vez de darle
+            # --accept-data-loss al pipeline, que dejaría pasar también el
+            # borrado silencioso de una columna o una tabla.
+            DB_URL=$(grep -E '^DATABASE_URL=' .env | head -1 | cut -d= -f2- | sed -E 's#@[^:/]+:#@postgres:#')
+            docker compose exec -T postgres psql "$DB_URL" -v ON_ERROR_STOP=1 \
+              -f /dev/stdin < packages/shared-prisma/prisma/sql/pre-push.sql
+
             echo "==> Migraciones"
             docker compose run --rm -w /app/packages/shared-prisma auth-service \
               npx prisma db push --skip-generate
