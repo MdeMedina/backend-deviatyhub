@@ -710,6 +710,37 @@ export class BrainService {
         doctor_id: parsedJson.doctor_id || existingMetadata.booking?.doctor_id || '',
       };
       
+      // Contraste del tratamiento elegido con lo que pidió el paciente.
+      // El modelo fija el tratamiento copiando un UUID, y un UUID equivocado no
+      // se nota en ninguna parte: un paciente pidió endodoncia durante toda la
+      // conversación y su cita quedó como limpieza dental. Si el paciente nombró
+      // UN solo tratamiento del catálogo y el elegido es otro, manda el paciente.
+      if (updatedBooking.procedimiento_id) {
+        const dichoPorElPaciente = [
+          ...(params.history || [])
+            .filter((m: any) => String(m.role).toUpperCase() === 'USER')
+            .map((m: any) => String(m.content || '')),
+          params.userInput,
+        ];
+        const mencionados = tratamientosMencionados(
+          dichoPorElPaciente,
+          activeTreatments.map((t: any) => ({ id: t.id, name: t.name })),
+        );
+
+        if (mencionados.length === 1 && mencionados[0].id !== updatedBooking.procedimiento_id) {
+          const elegido = activeTreatments.find((t: any) => t.id === updatedBooking.procedimiento_id);
+          this.logger.error(
+            `Tratamiento corregido en la conversación ${params.conversationId}: el modelo eligió ` +
+              `"${elegido?.name ?? updatedBooking.procedimiento_id}" pero el paciente solo habló de ` +
+              `"${mencionados[0].name}". Se impone lo que dijo el paciente.`,
+          );
+          updatedBooking.procedimiento_id = mencionados[0].id;
+          // El especialista y la hora se eligieron para el tratamiento erróneo y
+          // su duración; con otro tratamiento hay que volver a validarlos.
+          updatedBooking.doctor_id = '';
+        }
+      }
+
       await this.prisma.conversation.update({
         where: { id: params.conversationId },
         data: {
@@ -1119,6 +1150,63 @@ export class BrainService {
  * ¿El paciente pidió EXPLÍCITAMENTE hablar con una persona?
  * Se normalizan acentos para que "recepcion" y "recepción" pesen igual.
  */
+const PALABRAS_POCO_DISTINTIVAS = new Set([
+  'de', 'del', 'la', 'el', 'los', 'las', 'y', 'con', 'para', 'por', 'a',
+  'general', 'dental', 'dentales', 'evaluacion', 'control', 'sesion',
+  'tratamiento', 'consulta', 'primera', 'simple',
+]);
+
+function normalizar(text: string): string {
+  return (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+/**
+ * Tratamientos del catálogo que el PACIENTE nombró con sus propias palabras.
+ *
+ * El tratamiento se fija hoy haciendo que el modelo copie un UUID de la lista.
+ * Copiar identificadores es justo lo que peor se le da, y equivocarse no se nota:
+ * el UUID es opaco, así que una cita puede quedar con un tratamiento que nadie
+ * pidió sin que ningún paso del flujo lo detecte. Esto permite contrastar esa
+ * elección con lo que el paciente dijo de verdad.
+ *
+ * Solo se miran los mensajes del paciente: lo que el agente haya escrito no es
+ * evidencia de nada, y contarlo realimentaría su propio error.
+ */
+export function tratamientosMencionados(
+  textosDelPaciente: string[],
+  catalogo: { id: string; name: string }[],
+): { id: string; name: string }[] {
+  const texto = textosDelPaciente.map(normalizar).join(' \n ');
+  if (!texto.trim()) return [];
+
+  const encontrados = new Map<string, { id: string; name: string }>();
+
+  for (const t of catalogo) {
+    const nombreNorm = normalizar(t.name);
+
+    // Palabras propias del nombre: "Limpieza Dental" se reconoce por "limpieza",
+    // no por "dental", que comparten varios. Se admite el plural.
+    const distintivas = nombreNorm
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 5 && !PALABRAS_POCO_DISTINTIVAS.has(w));
+
+    const patrones = distintivas.length
+      ? distintivas.map((w) => new RegExp(`\\b${w}(es|s)?\\b`))
+      : // Sin ninguna palabra propia (p. ej. "Consulta General") solo vale el
+        // nombre completo, para no capturar un "consulta" suelto.
+        [new RegExp(`\\b${nombreNorm.replace(/[^a-z0-9]+/g, '\\s+')}\\b`)];
+
+    if (patrones.some((re) => re.test(texto))) {
+      encontrados.set(t.id, { id: t.id, name: t.name });
+    }
+  }
+
+  return [...encontrados.values()];
+}
+
 export function pideHumanoExplicitamente(text: string): boolean {
   const t = (text || '')
     .toLowerCase()
