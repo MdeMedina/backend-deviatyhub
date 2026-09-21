@@ -105,6 +105,8 @@ model Clinic {
   unavailabilityBlocks UnavailabilityBlock[]
   policies             Policy[]
   doctors              Doctor[]
+  doctorSchedules DoctorSchedule[]
+  doctorAbsences  DoctorAbsence[]
   treatments           Treatment[]
   offers               TreatmentOffer[]
   appointments         Appointment[]
@@ -149,6 +151,7 @@ model User {
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]
   conversations Conversation[] @relation("AssignedOperator")
+  doctor        Doctor?
 
   @@map("users")
 }
@@ -298,11 +301,67 @@ model Doctor {
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
+  /// Cuenta con la que el profesional entra a la plataforma. Es opcional: una
+  /// ficha de doctor puede existir sin que esa persona tenga acceso, que es la
+  /// situación de todos los doctores creados antes de esta función.
+  userId String? @unique @map("user_id") @db.Uuid
+
   clinic       Clinic            @relation(fields: [clinicId], references: [id])
+  user         User?             @relation(fields: [userId], references: [id])
   treatments   DoctorTreatment[]
   appointments Appointment[]
+  schedules    DoctorSchedule[]
+  absences     DoctorAbsence[]
 
   @@map("doctors")
+}
+
+/// Jornada semanal de un profesional. Admite VARIOS tramos por día, que es como
+/// se representa una jornada partida (mañana y tarde) y también una ausencia
+/// recurrente: "los viernes no atiendo por la tarde" es, simplemente, un viernes
+/// con solo el tramo de mañana. Así no hay dos fuentes de verdad para lo mismo.
+///
+/// El horario de la clínica sigue siendo el límite exterior: estos tramos pueden
+/// recortar dentro de él, nunca ampliarlo.
+model DoctorSchedule {
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId  String    @map("clinic_id") @db.Uuid
+  doctorId  String    @map("doctor_id") @db.Uuid
+  dayOfWeek Int       @map("day_of_week")
+  startTime String    @map("start_time")
+  endTime   String    @map("end_time")
+  active    Boolean?  @default(true)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, dayOfWeek, startTime])
+  @@index([clinicId, doctorId])
+  @@map("doctor_schedules")
+}
+
+/// Ausencia con fecha concreta: desde un par de horas sueltas hasta unas
+/// vacaciones de dos semanas. Un rango de instantes cubre los dos casos sin
+/// necesidad de modelos distintos; `allDay` solo sirve para pintarlo bien en la
+/// interfaz, no cambia el cálculo.
+model DoctorAbsence {
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId  String    @map("clinic_id") @db.Uuid
+  doctorId  String    @map("doctor_id") @db.Uuid
+  startsAt  DateTime  @map("starts_at") @db.Timestamptz
+  endsAt    DateTime  @map("ends_at") @db.Timestamptz
+  allDay    Boolean?  @default(false) @map("all_day")
+  reason    String?
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, doctorId, startsAt])
+  @@map("doctor_absences")
 }
 
 model Treatment {

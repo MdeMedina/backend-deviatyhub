@@ -2,6 +2,30 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { addMinutes, format, startOfDay, endOfDay } from 'date-fns';
 
+/** Tramo de minutos desde medianoche. */
+interface Tramo {
+  desde: number;
+  hasta: number;
+}
+
+const aMinutos = (hhmm: string): number => {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+/** Intersección de dos listas de tramos. El resultado nunca amplía a ninguna. */
+const intersectar = (a: Tramo[], b: Tramo[]): Tramo[] => {
+  const out: Tramo[] = [];
+  for (const x of a) {
+    for (const y of b) {
+      const desde = Math.max(x.desde, y.desde);
+      const hasta = Math.min(x.hasta, y.hasta);
+      if (desde < hasta) out.push({ desde, hasta });
+    }
+  }
+  return out;
+};
+
 @Injectable()
 export class AvailabilityTool {
   private readonly logger = new Logger(AvailabilityTool.name);
@@ -61,7 +85,8 @@ export class AvailabilityTool {
       return [];
     }
 
-    // 3. Obtener horario de la clínica para ese día
+    // 3. Horario de la clínica para ese día. Es el límite exterior: la jornada
+    //    de un profesional puede recortar dentro de él, nunca ampliarlo.
     const dayOfWeek = date.getDay(); // 0 (Sun) - 6 (Sat)
     const scheduleDb = await this.prisma.clinicSchedule.findFirst({
       where: { clinicId, dayOfWeek },
@@ -79,7 +104,11 @@ export class AvailabilityTool {
       return [];
     }
 
-    // 4. Obtener bloqueos de no disponibilidad globales de la clínica
+    const tramoClinica: Tramo[] = [
+      { desde: aMinutos(schedule.openTime), hasta: aMinutos(schedule.closeTime) },
+    ];
+
+    // 4. Bloqueos globales de la clínica (recurrentes por día de la semana)
     const blocks = await this.prisma.unavailabilityBlock.findMany({
       where: {
         clinicId,
@@ -88,7 +117,22 @@ export class AvailabilityTool {
       },
     });
 
-    // 5. Obtener citas existentes para los doctores candidatos en este día
+    // 5. Jornada propia de cada profesional para ese día de la semana.
+    const jornadas = await this.prisma.doctorSchedule.findMany({
+      where: { clinicId, doctorId: { in: doctorIds }, dayOfWeek, active: true },
+    });
+
+    // 6. Ausencias con fecha que solapan con el día consultado.
+    const ausencias = await this.prisma.doctorAbsence.findMany({
+      where: {
+        clinicId,
+        doctorId: { in: doctorIds },
+        startsAt: { lt: endOfDay(date) },
+        endsAt: { gt: startOfDay(date) },
+      },
+    });
+
+    // 7. Citas existentes de esos profesionales ese día.
     const existingAppointments = await this.prisma.appointment.findMany({
       where: {
         clinicId,
@@ -101,7 +145,20 @@ export class AvailabilityTool {
       },
     });
 
-    // 6. Generar Slots y comprobar solapes
+    // 8. Ventana efectiva de trabajo de cada profesional, ya acotada por la clínica.
+    //    Sin jornada configurada se asume el horario completo de la clínica: así
+    //    los profesionales dados de alta antes de existir esta función siguen
+    //    comportándose igual que siempre en lugar de quedarse sin horas.
+    const ventanaPorDoctor = new Map<string, Tramo[]>();
+    for (const docId of doctorIds) {
+      const propios = jornadas.filter((j) => j.doctorId === docId);
+      const base: Tramo[] = propios.length
+        ? propios.map((j) => ({ desde: aMinutos(j.startTime), hasta: aMinutos(j.endTime) }))
+        : tramoClinica;
+      ventanaPorDoctor.set(docId, intersectar(base, tramoClinica));
+    }
+
+    // 9. Generar slots y comprobar solapes
     const slots: string[] = [];
     const current = new Date(date);
     const [startH, startM] = schedule.openTime.split(':').map(Number);
@@ -117,18 +174,14 @@ export class AvailabilityTool {
     while (current < end) {
       const slotStart = new Date(current);
       const slotEnd = addMinutes(slotStart, durationMin);
+      const slotDesde = slotStart.getHours() * 60 + slotStart.getMinutes();
+      const slotHasta = slotDesde + durationMin;
 
-      // A. Comprobar si el slot cae dentro de algún bloqueo global
+      // A. Bloqueo global de la clínica
       const isBlocked = blocks.some((block) => {
-        const [bStartH, bStartM] = block.startTime.split(':').map(Number);
-        const [bEndH, bEndM] = block.endTime.split(':').map(Number);
-
-        const bStart = new Date(date);
-        bStart.setHours(bStartH, bStartM, 0, 0);
-        const bEnd = new Date(date);
-        bEnd.setHours(bEndH, bEndM, 0, 0);
-
-        return slotStart < bEnd && slotEnd > bStart;
+        const bStart = aMinutos(block.startTime);
+        const bEnd = aMinutos(block.endTime);
+        return slotDesde < bEnd && slotHasta > bStart;
       });
 
       if (isBlocked) {
@@ -136,8 +189,23 @@ export class AvailabilityTool {
         continue;
       }
 
-      // B. Comprobar disponibilidad de doctores: al menos uno debe estar libre
+      // B. Al menos un profesional debe poder atenderlo: dentro de SU jornada,
+      //    sin ausencia registrada y sin otra cita encima.
       const anyDoctorFree = doctorIds.some((docId) => {
+        const ventana = ventanaPorDoctor.get(docId) || [];
+        const dentroDeSuJornada = ventana.some(
+          (t) => slotDesde >= t.desde && slotHasta <= t.hasta,
+        );
+        if (!dentroDeSuJornada) return false;
+
+        const ausente = ausencias.some(
+          (a) =>
+            a.doctorId === docId &&
+            slotStart < new Date(a.endsAt) &&
+            slotEnd > new Date(a.startsAt),
+        );
+        if (ausente) return false;
+
         const isBusy = existingAppointments.some((app) => {
           if (app.doctorId !== docId) return false;
           const appStart = new Date(app.scheduledAt);
@@ -156,6 +224,6 @@ export class AvailabilityTool {
       current.setTime(current.getTime() + durationMin * 60 * 1000);
     }
 
-    return slots; // Retornar todas las opciones disponibles
+    return slots;
   }
 }
