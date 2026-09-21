@@ -158,13 +158,42 @@ export class BrainService {
           try {
             const [year, month, day] = date.split('-').map(Number);
             const localDate = new Date(year, month - 1, day);
+
+            // El especialista ya elegido manda sobre lo que pase el modelo. La
+            // agenda que interesa es la suya: sin fijarlo aquí, la herramienta
+            // devuelve las horas en que está libre CUALQUIERA de los que hacen
+            // ese tratamiento, y se le acaba ofreciendo al paciente una hora
+            // que su profesional no tiene.
+            const doctorEfectivo = bookingState.doctor_id || doctor_id;
+            const tratamientoEfectivo = bookingState.procedimiento_id || treatment_id;
+
             const slots = await this.availabilityTool.getAvailableSlots(
               params.clinicId,
               localDate,
-              treatment_id,
-              doctor_id
+              tratamientoEfectivo,
+              doctorEfectivo,
             );
-            if (slots.length === 0) return 'No hay disponibilidad para ese día con los criterios especificados.';
+
+            const nombreDoctor = doctorEfectivo
+              ? doctoresDelTratamiento.find((d) => d.id === doctorEfectivo)?.name
+              : undefined;
+            const conQuien = nombreDoctor ? ` con ${nombreDoctor}` : '';
+
+            if (slots.length === 0) {
+              // Sin horas de ese profesional, el paciente necesita saber si otro
+              // sí puede; si no, se queda con un "no hay" que no le sirve.
+              const alternativas = await this.horasDeOtrosEspecialistas(
+                params.clinicId,
+                localDate,
+                tratamientoEfectivo,
+                doctorEfectivo,
+                doctoresDelTratamiento,
+              );
+              if (alternativas) {
+                return `No quedan horas${conQuien} ese día. Otros especialistas que sí atienden ese tratamiento: ${alternativas}`;
+              }
+              return `No hay disponibilidad${conQuien} ese día.`;
+            }
 
             // Cuando el paciente pidió una hora concreta, la herramienta
             // responde por sí o por no. Antes se devolvía siempre la lista
@@ -174,12 +203,27 @@ export class BrainService {
             if (time) {
               const pedida = time.trim();
               if (slots.includes(pedida)) {
-                return `CONFIRMADO: la hora ${pedida} está DISPONIBLE. Dala por buena y continúa con el siguiente dato que falte.`;
+                return `CONFIRMADO: la hora ${pedida} está DISPONIBLE${conQuien}. Dala por buena y continúa con el siguiente dato que falte.`;
               }
-              return `La hora ${pedida} NO está disponible. Otras horas libres ese día: ${slots.join(', ')}`;
+              // Ocupado ESE profesional a ESA hora: antes de hacerle mover la
+              // hora, mirar si otro la tiene libre. Es la disyuntiva real del
+              // paciente: cambiar de hora o cambiar de especialista.
+              const otros = await this.horasDeOtrosEspecialistas(
+                params.clinicId,
+                localDate,
+                tratamientoEfectivo,
+                doctorEfectivo,
+                doctoresDelTratamiento,
+                pedida,
+              );
+              const alternativa = otros ? ` A las ${pedida} sí está libre: ${otros}.` : '';
+              return (
+                `La hora ${pedida} NO está disponible${conQuien}.${alternativa}` +
+                ` Otras horas libres${conQuien} ese día: ${slots.join(', ')}`
+              );
             }
 
-            return `Horarios disponibles ese día: ${slots.join(', ')}`;
+            return `Horarios disponibles${conQuien} ese día: ${slots.join(', ')}`;
           } catch (e) {
             // Política de usuario: Escalar de inmediato si falla el tool
             await this.humanTool.escalate(params.conversationId, `Error en AvailabilityTool: ${(e as Error).message}`);
@@ -430,6 +474,37 @@ export class BrainService {
           .join('\n')
       : 'No hay tratamientos disponibles actualmente.';
 
+    // Especialistas que atienden el tratamiento YA elegido. El modelo no tenía
+    // forma de saberlo: la lista de doctores solo trae nombre y título, y la de
+    // tratamientos no menciona especialistas. Sin este dato no puede preguntar
+    // con quién quiere atenderse, ni reconocer al que le nombren.
+    const doctoresDelTratamiento = bookingState.procedimiento_id
+      ? (
+          await this.prisma.doctorTreatment.findMany({
+            where: { clinicId: params.clinicId, treatmentId: bookingState.procedimiento_id },
+            include: { doctor: true },
+          })
+        )
+          .filter((dt: any) => dt.doctor && dt.doctor.active !== false)
+          .map((dt: any) => ({ id: dt.doctor.id, name: dt.doctor.name }))
+      : [];
+
+    // Solo se pregunta cuando de verdad hay algo que elegir.
+    const requiereEleccionDoctor = doctoresDelTratamiento.length > 1 && !bookingState.doctor_id;
+
+    const especialistasBlock = bookingState.procedimiento_id
+      ? doctoresDelTratamiento.length === 0
+        ? '👩‍⚕️ ESPECIALISTAS PARA ESE TRATAMIENTO: ninguno configurado. No ofrezcas horas; dile que el equipo le confirma y no inventes un profesional.'
+        : doctoresDelTratamiento.length === 1
+          ? `👩‍⚕️ ESPECIALISTA PARA ESE TRATAMIENTO: ${doctoresDelTratamiento[0].name}. Es el único que lo atiende, así que NO preguntes con quién prefiere: el sistema lo asigna solo. Deja "doctor_id" vacío.`
+          : `👩‍⚕️ ESPECIALISTAS QUE ATIENDEN ESE TRATAMIENTO:\n${doctoresDelTratamiento
+              .map((d) => `- [ID: ${d.id}] ${d.name}`)
+              .join('\n')}\n` +
+            (bookingState.doctor_id
+              ? 'El paciente ya eligió; respeta esa elección y no vuelvas a preguntar.'
+              : 'Pregúntale con cuál prefiere atenderse ANTES de hablar de días y horas, porque las horas libres son las de ese profesional, no las de la clínica. Si no tiene preferencia, deja "doctor_id" vacío y sigue con la fecha. Guarda el UUID del que elija en "doctor_id".')
+      : '';
+
     // Formatear políticas de la clínica
     const policiesInfo = activePolicies.length
       ? activePolicies.map(p => `- ${p.title}: ${p.description}`).join('\n')
@@ -590,13 +665,16 @@ export class BrainService {
       ESTADO ACTUAL DEL FLUJO: {currentStep}
       INTENCIÓN DETECTADA: {intent}
 
+      {especialistasBlock}
+
       {ambiguityBlock}
 
       📋 DATOS NECESARIOS PARA AGENDAR. Se piden en este orden y no se puede reservar sin todos:
       1. Tratamiento: rellena "procedimiento_id" con el UUID que aparece entre corchetes como [ID: ...] en la lista de Tratamientos y Precios. Nunca pongas ahí el nombre del tratamiento.
-      2. Fecha: campo "fecha", formato DD/MM/YYYY.
-      3. Hora: campo "hora", formato HH:MM.
-      4. Nombre, Apellido y correo del paciente.
+      2. Especialista: mira el bloque ESPECIALISTAS. Si lo atiende UNO SOLO, no preguntes nada y deja "doctor_id" vacío. Si lo atienden VARIOS, pregúntale con cuál prefiere ANTES de hablar de días y horas, y guarda el UUID en "doctor_id". Si te dice que le da igual, deja "doctor_id" vacío y sigue.
+      3. Fecha: campo "fecha", formato DD/MM/YYYY.
+      4. Hora: campo "hora", formato HH:MM.
+      5. Nombre, Apellido y correo del paciente.
       - Mira el ESTADO DE AGENDAMIENTO PERSISTIDO y pide SOLO el primer dato que falte, uno por mensaje.
       - Antes de pedir cualquier dato, repasa TODO el historial de la conversación: si el paciente ya lo dijo en algún mensaje anterior, rellénalo en el JSON y no lo vuelvas a preguntar.
       - REGLA INVIOLABLE: solo puedes rellenar un campo con lo que el paciente haya dicho de forma explícita. Tienes PROHIBIDO elegir por él. Si le ofreciste varias horas y aún no ha escogido ninguna, "hora" se queda VACÍO aunque te haya dado su nombre o su correo: nunca tomes la primera de la lista por defecto. Reservarle una hora que no eligió es peor que no reservarle nada.
@@ -604,8 +682,8 @@ export class BrainService {
       - ORDEN OBLIGATORIO: esta regla se aplica DESPUÉS de haber fijado la fecha. Si el día todavía es relativo y sin confirmar ("mañana", "el lunes"), manda la REGLA DE ORO PARA FECHAS RELATIVAS: ese turno solo puede pedir la confirmación del día, sin consultar disponibilidad y sin pedir ningún otro dato. Solo cuando el paciente confirme el día pasas a comprobar la hora y a pedir lo que falte.
       - Si el paciente pide hora sin decir para qué tratamiento, pregúntaselo ANTES de ofrecer horarios: la duración de la reserva depende del tratamiento, así que sin él los horarios que muestres pueden no ser válidos.
       - El correo es obligatorio para cerrar la reserva. Pídelo junto con el nombre y el apellido.
-      - El especialista se pide JUSTO DESPUÉS de tener fecha y hora, y ANTES de pedir el nombre y el correo. Es lo primero que falta en ese punto, y dejarlo para el final obliga al paciente a dar todos sus datos para recién entonces enterarse de que además tiene que elegir doctor.
-      - Cuando ya tengas tratamiento, fecha y hora, mira la lista de Doctores Disponibles: si el tratamiento lo atiende UNO SOLO, no preguntes nada y deja "doctor_id" vacío, que el sistema lo asigna. Si lo atienden VARIOS, pregúntale al paciente con cuál prefiere y guarda el UUID del que elija en "doctor_id".
+      - LA AGENDA ES LA DE UN PROFESIONAL, NO LA DE LA CLÍNICA. Las horas libres que muestres son SIEMPRE las del especialista elegido. Por eso el especialista se pregunta antes que el día y la hora: al revés, le ofrecerías horas que ese profesional no tiene.
+      - Si el paciente eligió especialista y a la hora que pide ese profesional está ocupado, NO te limites a decir que no hay: dile qué horas sí tiene ESE especialista ese día, y si otro de la lista sí está libre a la hora que él quería, ofréceselo por su nombre. Que elija entre cambiar de hora o cambiar de profesional.
       - Si el paciente responde con el nombre del especialista (por ejemplo "con la doctora Ana López"), eso es una elección válida: busca ese nombre en la lista de Doctores Disponibles y guarda su UUID. No vuelvas a preguntar ni des a entender que no le entendiste.
       - Si el que eligió no está libre a esa hora, el sistema te lo dirá y entonces le ofreces otra hora con ese especialista o cambiar de profesional.
 
@@ -676,6 +754,7 @@ export class BrainService {
       bookingStateBlock,
       supervisedBlock,
       ambiguityBlock,
+      especialistasBlock,
     });
 
     const toolsUsed: string[] = Array.isArray((response as any).intermediateSteps)
@@ -768,7 +847,8 @@ export class BrainService {
         params.currentStep as ConversationStep,
         classification.intent,
         classification.confidence,
-        currentBooking
+        currentBooking,
+        requiereEleccionDoctor,
       );
       finalStep = nextStep;
 
@@ -839,21 +919,10 @@ export class BrainService {
       //     paso del flujo antes que una instrucción de texto: pedía el nombre
       //     y el correo y recién al agendar aparecía la pregunta del doctor,
       //     obligando al paciente a dar todos sus datos para nada.
-      if (
-        finalStep !== 'concluido' &&
-        currentBooking.procedimiento_id &&
-        currentBooking.fecha &&
-        currentBooking.hora &&
-        !currentBooking.doctor_id
-      ) {
-        const preguntaDoctor = await this.askDoctorIfAmbiguous(
-          params.clinicId,
-          currentBooking,
-        );
-        if (preguntaDoctor) {
-          replyText = preguntaDoctor;
-        }
-      }
+      // (El especialista ya no se pregunta aquí. Se pregunta al principio, justo
+      //  después del tratamiento, porque las horas que se ofrecen son las suyas.
+      //  Volver a preguntarlo en este punto sería preguntar dos veces, y a un
+      //  paciente que ya dijo "me da igual" le sonaría a que no se le escuchó.)
 
       // 8. Guardarraíl: el modelo no puede dar por hecha una reserva que el
       //    sistema no ejecutó. Solo executeScheduling confirma, y ese camino ya
@@ -930,8 +999,30 @@ export class BrainService {
         };
       }
       if (!(await estaLibre(elegido.id))) {
+        // Decir solo "no puede" obliga al paciente a adivinar la salida. Se
+        // miran las dos alternativas reales: otras horas de SU profesional, y
+        // qué colega sí tiene justo esa hora.
+        const otrosLibres: string[] = [];
+        for (const c of candidatos) {
+          if (c.id === elegido.id) continue;
+          if (await estaLibre(c.id)) otrosLibres.push(c.name);
+        }
+        const suyas = await this.availabilityTool.getAvailableSlots(
+          clinicId,
+          scheduledAt,
+          treatment.id,
+          elegido.id,
+        );
+
+        const conOtro = otrosLibres.length
+          ? ` A esa hora sí puede atenderte ${otrosLibres.join(' o ')}.`
+          : '';
+        const otrasHoras = suyas.length
+          ? ` Con ${elegido.name} ese día quedan: ${suyas.slice(0, 5).join(', ')}.`
+          : ` Con ${elegido.name} no queda ninguna hora ese día.`;
+
         return {
-          reply: `${elegido.name} no tiene libre las *${hora}*. ¿Prefieres otra hora con ${elegido.name}, o que te asigne otro especialista?`,
+          reply: `${elegido.name} no tiene libre las *${hora}*.${conOtro}${otrasHoras} ¿Qué prefieres?`,
         };
       }
       return { doctorId: elegido.id, doctorName: elegido.name };
@@ -967,47 +1058,6 @@ export class BrainService {
     };
   }
 
-  /**
-   * Devuelve la pregunta por el especialista solo si de verdad hay que elegir:
-   * varios profesionales atienden ese tratamiento y más de uno está libre a esa
-   * hora. Si no hay ambigüedad devuelve null y el sistema asigna solo.
-   */
-  private async askDoctorIfAmbiguous(clinicId: string, booking: any): Promise<string | null> {
-    try {
-      const scheduledAt = this.parseBookingDateTime(booking.fecha, booking.hora);
-      if (!scheduledAt) return null;
-
-      const treatment = await this.prisma.treatment.findFirst({
-        where: { id: booking.procedimiento_id, clinicId },
-        include: { doctors: { include: { doctor: true } } },
-      });
-      if (!treatment) return null;
-
-      const candidatos = (treatment.doctors || [])
-        .filter((dt: any) => dt.doctor && dt.doctor.active !== false)
-        .map((dt: any) => ({ id: dt.doctor.id, name: dt.doctor.name }));
-      if (candidatos.length < 2) return null;
-
-      const libres: { id: string; name: string }[] = [];
-      for (const c of candidatos) {
-        const slots = await this.availabilityTool.getAvailableSlots(
-          clinicId,
-          scheduledAt,
-          treatment.id,
-          c.id,
-        );
-        if (slots.includes(String(booking.hora).trim())) libres.push(c);
-      }
-      if (libres.length < 2) return null;
-
-      const listado = libres.map((d) => `- ${d.name}`).join('\n');
-      return `Para *${treatment.name}* a las *${booking.hora}* puedo agendarte con:\n\n${listado}\n\n¿Con cuál prefieres?`;
-    } catch (e) {
-      this.logger.warn(`No se pudo resolver la pregunta de especialista: ${(e as Error).message}`);
-      return null;
-    }
-  }
-
   private parseBookingDateTime(fecha?: string, hora?: string): Date | null {
     if (!fecha || !hora) return null;
     let y: number, m: number, d: number;
@@ -1020,6 +1070,44 @@ export class BrainService {
     if (!hm) return null;
     const dt = new Date(y, m - 1, d, +hm[1], +hm[2], 0, 0);
     return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  /**
+   * Qué pueden ofrecer los DEMÁS especialistas que atienden ese tratamiento.
+   *
+   * Sirve para que un "no hay" nunca sea un callejón sin salida: si el
+   * profesional que el paciente eligió no tiene esa hora, lo útil es saber
+   * quién sí la tiene. Con `horaConcreta` responde solo por quienes la tengan
+   * libre; sin ella, resume las primeras horas de cada uno.
+   */
+  private async horasDeOtrosEspecialistas(
+    clinicId: string,
+    fecha: Date,
+    treatmentId: string | undefined,
+    doctorElegido: string | undefined,
+    candidatos: { id: string; name: string }[],
+    horaConcreta?: string,
+  ): Promise<string | null> {
+    const otros = candidatos.filter((d) => d.id !== doctorElegido);
+    if (!otros.length) return null;
+
+    const partes: string[] = [];
+    for (const d of otros) {
+      try {
+        const libres = await this.availabilityTool.getAvailableSlots(clinicId, fecha, treatmentId, d.id);
+        if (!libres.length) continue;
+
+        if (horaConcreta) {
+          if (libres.includes(horaConcreta)) partes.push(d.name);
+        } else {
+          partes.push(`${d.name} (${libres.slice(0, 3).join(', ')})`);
+        }
+      } catch (e) {
+        this.logger.warn(`No se pudo consultar la agenda de ${d.name}: ${(e as Error).message}`);
+      }
+    }
+
+    return partes.length ? partes.join(' · ') : null;
   }
 
   private async executeScheduling(

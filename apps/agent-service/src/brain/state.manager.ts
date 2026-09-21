@@ -5,6 +5,7 @@ import { Intent } from './intention.classifier';
 export type ConversationStep = 
   | 'inicio'
   | 'esperando_tratamiento'
+  | 'esperando_doctor'
   | 'esperando_fecha'
   | 'esperando_horario'
   | 'esperando_datos_personales'
@@ -22,7 +23,11 @@ export class StateManager {
     currentStep: ConversationStep,
     intent: Intent,
     confidence: number,
-    bookingState?: any
+    bookingState?: any,
+    // La agenda es la de un profesional concreto, no la de la clínica. Cuando
+    // el tratamiento lo atiende más de uno hay que saber con quién antes de
+    // hablar de horas, porque las horas libres dependen de esa elección.
+    requiereEleccionDoctor = false,
   ): Promise<ConversationStep> {
     
     // Lógica de 2 intentos para baja confianza
@@ -49,6 +54,7 @@ export class StateManager {
     const pasoConocido: ConversationStep[] = [
       'inicio',
       'esperando_tratamiento',
+      'esperando_doctor',
       'esperando_fecha',
       'esperando_horario',
       'esperando_datos_personales',
@@ -70,16 +76,32 @@ export class StateManager {
       nextStep = 'inicio';
     }
 
+    // Con el tratamiento ya fijado: si hay que escoger especialista, ese es el
+    // siguiente dato; si no, se sigue por la fecha.
+    const trasElTratamiento = (): ConversationStep => {
+      if (requiereEleccionDoctor && !booking.doctor_id) return 'esperando_doctor';
+      return booking.fecha ? 'esperando_horario' : 'esperando_fecha';
+    };
+
     // Máquina de estados con guardas de validación basadas en datos reales
     switch (currentStep) {
       case 'inicio':
         if (intent === Intent.AGENDAR_CITA) {
-          nextStep = booking.procedimiento_id ? 'esperando_fecha' : 'esperando_tratamiento';
+          nextStep = booking.procedimiento_id
+            ? trasElTratamiento()
+            : 'esperando_tratamiento';
         }
         break;
-      
+
       case 'esperando_tratamiento':
         if (booking.procedimiento_id) {
+          nextStep = trasElTratamiento();
+        }
+        break;
+
+      case 'esperando_doctor':
+        // Se sale en cuanto elige, o si deja de haber algo que elegir.
+        if (booking.doctor_id || !requiereEleccionDoctor) {
           nextStep = booking.fecha ? 'esperando_horario' : 'esperando_fecha';
         }
         break;
