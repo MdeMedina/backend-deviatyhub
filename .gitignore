@@ -68,3 +68,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Caché incremental de tsc. Estaba versionado y provocaba que en un checkout
+# limpio tsc creyera que ya había compilado: no emitía los archivos nuevos y el
+# build fallaba con "has no exported member" sobre código que sí existe.
+*.tsbuildinfo
