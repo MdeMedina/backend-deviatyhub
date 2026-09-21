@@ -72,8 +72,11 @@ async function calcularHorasLibres(prisma, clinicId, date, treatmentId, doctorId
         prisma.unavailabilityBlock.findMany({
             where: { clinicId, active: true, daysOfWeek: { has: dayOfWeek } },
         }),
+        // Se piden TODOS los días, no solo el consultado: hay que distinguir "no
+        // trabaja ese día" de "no tiene jornada configurada", y filtrando por
+        // dayOfWeek ambos casos llegan aquí como una lista vacía.
         prisma.doctorSchedule.findMany({
-            where: { clinicId, doctorId: { in: doctorIds }, dayOfWeek, active: true },
+            where: { clinicId, doctorId: { in: doctorIds }, active: true },
         }),
         prisma.doctorAbsence.findMany({
             where: {
@@ -92,14 +95,27 @@ async function calcularHorasLibres(prisma, clinicId, date, treatmentId, doctorId
             },
         }),
     ]);
-    // 7. Ventana efectiva de cada profesional. Sin jornada propia se asume el
-    //    horario de la clínica, para que quien fue dado de alta antes de existir
-    //    esta función siga comportándose igual en vez de quedarse sin horas.
+    // 7. Ventana efectiva de cada profesional.
+    //
+    //    Quien NO tiene jornada configurada en ningún día hereda el horario de la
+    //    clínica: así, los profesionales dados de alta antes de existir esta
+    //    función siguen comportándose igual en vez de quedarse sin horas de golpe.
+    //
+    //    Pero en cuanto alguien define su jornada, manda la jornada: un día sin
+    //    tramos es un día en el que NO atiende. Si no se distinguieran los dos
+    //    casos, configurar "martes y jueves" dejaría el resto de la semana con el
+    //    horario completo de la clínica, que es justo lo contrario de lo pedido.
     const ventanaPorDoctor = new Map();
     for (const docId of doctorIds) {
-        const propios = jornadas.filter((j) => j.doctorId === docId);
-        const base = propios.length
-            ? propios.map((j) => ({ desde: (0, exports.aMinutos)(j.startTime), hasta: (0, exports.aMinutos)(j.endTime) }))
+        const suyos = jornadas.filter((j) => j.doctorId === docId);
+        const tieneJornadaDefinida = suyos.length > 0;
+        const deEseDia = suyos.filter((j) => j.dayOfWeek === dayOfWeek);
+        if (tieneJornadaDefinida && deEseDia.length === 0) {
+            ventanaPorDoctor.set(docId, []);
+            continue;
+        }
+        const base = tieneJornadaDefinida
+            ? deEseDia.map((j) => ({ desde: (0, exports.aMinutos)(j.startTime), hasta: (0, exports.aMinutos)(j.endTime) }))
             : tramoClinica;
         ventanaPorDoctor.set(docId, (0, exports.intersectarTramos)(base, tramoClinica));
     }
