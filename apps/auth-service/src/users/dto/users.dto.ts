@@ -5,9 +5,18 @@ export class InviteUserDto {
   @IsNotEmpty()
   email!: string;
 
+  /**
+   * Opcional cuando se invita a un profesional: si no viene, se usa (creándolo
+   * si hace falta) el rol Doctor, que es el único que tiene sentido para él.
+   */
   @IsUUID()
-  @IsNotEmpty()
-  roleId!: string;
+  @IsOptional()
+  roleId?: string;
+
+  /** Ficha de profesional a la que queda enlazada esta cuenta. */
+  @IsUUID()
+  @IsOptional()
+  doctorId?: string;
 }
 
 export class UpdateUserDto {

@@ -108,7 +108,32 @@ export class AgendaService {
 
   // --- APPOINTMENTS ---
 
-  async findAllAppointments(clinicId: string, from: string, to: string, doctorId?: string) {
+  /**
+   * Si el usuario conectado es un profesional, su agenda es la suya y solo la
+   * suya. Se resuelve en el servidor a propósito: el filtro por doctor que
+   * viaja en la query lo controla el cliente, así que basta con no enviarlo
+   * para ver las citas de toda la clínica, con los nombres de los pacientes
+   * de los demás.
+   */
+  private async doctorDelUsuario(clinicId: string, userId?: string): Promise<string | null> {
+    if (!userId) return null;
+    const ficha = await this.prisma.doctor.findFirst({
+      where: { clinicId, userId },
+      select: { id: true },
+    });
+    return ficha?.id ?? null;
+  }
+
+  async findAllAppointments(
+    clinicId: string,
+    from: string,
+    to: string,
+    doctorId?: string,
+    userId?: string,
+  ) {
+    const propio = await this.doctorDelUsuario(clinicId, userId);
+    const filtroDoctor = propio ?? doctorId;
+
     return this.prisma.appointment.findMany({
       where: {
         clinicId,
@@ -116,7 +141,7 @@ export class AgendaService {
           gte: new Date(`${from}T00:00:00Z`),
           lte: new Date(`${to}T23:59:59Z`),
         },
-        ...(doctorId ? { doctorId } : {}),
+        ...(filtroDoctor ? { doctorId: filtroDoctor } : {}),
       },
       include: {
         contact: true,
@@ -127,9 +152,10 @@ export class AgendaService {
     });
   }
 
-  async findOneAppointment(clinicId: string, id: string) {
+  async findOneAppointment(clinicId: string, id: string, userId?: string) {
+    const propio = await this.doctorDelUsuario(clinicId, userId);
     const appointment = await this.prisma.appointment.findFirst({
-      where: { id, clinicId },
+      where: { id, clinicId, ...(propio ? { doctorId: propio } : {}) },
       include: {
         contact: true,
         treatment: true,

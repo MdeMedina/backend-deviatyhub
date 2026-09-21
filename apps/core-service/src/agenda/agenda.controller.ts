@@ -8,7 +8,7 @@ import {
   Query,
   Inject,
 } from '@nestjs/common';
-import { Auditable, CurrentClinicId } from '@deviaty/shared-nestjs';
+import { Auditable, CurrentClinicId, CurrentUserId } from '@deviaty/shared-nestjs';
 import { AgendaService } from './agenda.service';
 import { CreateAppointmentDto, UpdateStatusDto, RescheduleDto } from './dto/appointment.dto';
 
@@ -32,19 +32,21 @@ export class AgendaController {
   @Get('appointments')
   async findAll(
     @CurrentClinicId() clinicId: string,
+    @CurrentUserId() userId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
     @Query('doctor_id') doctorId?: string
   ) {
-    return this.agendaService.findAllAppointments(clinicId, startDate, endDate, doctorId);
+    return this.agendaService.findAllAppointments(clinicId, startDate, endDate, doctorId, userId);
   }
 
   @Get('appointments/:id')
   async findOne(
     @CurrentClinicId() clinicId: string,
+    @CurrentUserId() userId: string,
     @Param('id') id: string
   ) {
-    return this.agendaService.findOneAppointment(clinicId, id);
+    return this.agendaService.findOneAppointment(clinicId, id, userId);
   }
 
   @Post('appointments')
