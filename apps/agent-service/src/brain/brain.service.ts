@@ -190,8 +190,14 @@ export class BrainService {
               doctorEfectivo,
             );
 
+            // Se resuelven aquí y no se reutiliza la lista del principio del
+            // turno: aquella se arma con el tratamiento que había al empezar, y
+            // si el paciente lo acaba de decir, llega vacía. Con ella vacía no
+            // se nombraba al profesional ni se ofrecían las horas de un colega.
+            const candidatos = await this.especialistasDe(params.clinicId, tratamientoEfectivo);
+
             const nombreDoctor = doctorEfectivo
-              ? doctoresDelTratamiento.find((d) => d.id === doctorEfectivo)?.name
+              ? candidatos.find((d) => d.id === doctorEfectivo)?.name
               : undefined;
             const conQuien = nombreDoctor ? ` con ${nombreDoctor}` : '';
 
@@ -203,7 +209,7 @@ export class BrainService {
                 localDate,
                 tratamientoEfectivo,
                 doctorEfectivo,
-                doctoresDelTratamiento,
+                candidatos,
               );
               if (alternativas) {
                 return `No quedan horas${conQuien} ese día. Otros especialistas que sí atienden ese tratamiento: ${alternativas}`;
@@ -229,7 +235,7 @@ export class BrainService {
                 localDate,
                 tratamientoEfectivo,
                 doctorEfectivo,
-                doctoresDelTratamiento,
+                candidatos,
                 pedida,
               );
               const alternativa = otros ? ` A las ${pedida} sí está libre: ${otros}.` : '';
@@ -510,16 +516,10 @@ export class BrainService {
     // forma de saberlo: la lista de doctores solo trae nombre y título, y la de
     // tratamientos no menciona especialistas. Sin este dato no puede preguntar
     // con quién quiere atenderse, ni reconocer al que le nombren.
-    const doctoresDelTratamiento = bookingState.procedimiento_id
-      ? (
-          await this.prisma.doctorTreatment.findMany({
-            where: { clinicId: params.clinicId, treatmentId: bookingState.procedimiento_id },
-            include: { doctor: true },
-          })
-        )
-          .filter((dt: any) => dt.doctor && dt.doctor.active !== false)
-          .map((dt: any) => ({ id: dt.doctor.id, name: dt.doctor.name }))
-      : [];
+    const doctoresDelTratamiento = await this.especialistasDe(
+      params.clinicId,
+      bookingState.procedimiento_id,
+    );
 
     // Solo se pregunta cuando de verdad hay algo que elegir.
     const requiereEleccionDoctor = doctoresDelTratamiento.length > 1 && !bookingState.doctor_id;
@@ -978,13 +978,22 @@ export class BrainService {
       //     le gasta un turno al paciente por una decisión que no existe. Se
       //     asigna aquí y, si la respuesta era esa pregunta, se sustituye por lo
       //     siguiente que de verdad falta.
+      //     Los especialistas se recalculan AQUÍ, no se reutiliza la lista del
+      //     principio del turno: aquella se arma con el tratamiento que había
+      //     al empezar, y en el primer mensaje ("quiero una endodoncia") el
+      //     tratamiento se fija en este mismo turno, así que llegaba vacía.
+      const especialistasDelElegido = await this.especialistasDe(
+        params.clinicId,
+        currentBooking.procedimiento_id,
+      );
+
       if (
         finalStep !== 'concluido' &&
         currentBooking.procedimiento_id &&
         !currentBooking.doctor_id &&
-        doctoresDelTratamiento.length === 1
+        especialistasDelElegido.length === 1
       ) {
-        const unico = doctoresDelTratamiento[0];
+        const unico = especialistasDelElegido[0];
         currentBooking.doctor_id = unico.id;
         await this.prisma.conversation.update({
           where: { id: params.conversationId },
@@ -1150,6 +1159,21 @@ export class BrainService {
     if (!hm) return null;
     const dt = new Date(y, m - 1, d, +hm[1], +hm[2], 0, 0);
     return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  /** Profesionales activos que atienden un tratamiento. */
+  private async especialistasDe(
+    clinicId: string,
+    treatmentId?: string,
+  ): Promise<{ id: string; name: string }[]> {
+    if (!treatmentId) return [];
+    const rel = await this.prisma.doctorTreatment.findMany({
+      where: { clinicId, treatmentId },
+      include: { doctor: true },
+    });
+    return rel
+      .filter((dt: any) => dt.doctor && dt.doctor.active !== false)
+      .map((dt: any) => ({ id: dt.doctor.id, name: dt.doctor.name }));
   }
 
   /**
