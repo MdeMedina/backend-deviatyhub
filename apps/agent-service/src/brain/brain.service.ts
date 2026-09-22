@@ -68,6 +68,22 @@ export class BrainService {
       });
     }
 
+    // Calendario de los próximos días, ya resuelto.
+    //
+    // Antes se le daba la fecha de hoy y el nombre del día, y el modelo tenía
+    // que calcular el resto. Se equivocaba: a un paciente que pidió "el
+    // miércoles" le respondió "miércoles 22 de septiembre" cuando el 22 era
+    // martes, y le quedó la hora un día antes del que pidió. Contar días no es
+    // algo que un modelo de lenguaje deba hacer a ojo, así que se le entrega
+    // hecho y solo tiene que buscar en la tabla.
+    const calendarioProximosDias = Array.from({ length: 21 }, (_, i) => {
+      const d = new Date(nowLocal);
+      d.setDate(d.getDate() + i);
+      const nombre = DIAS_SEMANA[d.getDay()];
+      const etiqueta = i === 0 ? ' (HOY)' : i === 1 ? ' (MAÑANA)' : i === 2 ? ' (PASADO MAÑANA)' : '';
+      return `- ${nombre} ${format(d, 'dd/MM/yyyy')}${etiqueta}`;
+    }).join('\n');
+
     const bookingState = (params.metadata?.booking || {}) as {
       fecha?: string;
       hora?: string;
@@ -660,6 +676,18 @@ export class BrainService {
       - Hora Actual del Sistema: {currentTime}
       - Día de la Semana: {currentDayOfWeek}
 
+      📅 CALENDARIO. Estas son las equivalencias reales entre día y fecha:
+{calendarioProximosDias}
+
+      - TIENES PROHIBIDO calcular fechas por tu cuenta o deducir qué número le
+        toca a un día. Búscalo en esta tabla y cópialo tal cual.
+      - Cuando el paciente diga un día ("el miércoles", "mañana", "la próxima
+        semana"), localiza esa línea y usa SU fecha. Si dice un día de la semana
+        sin más, es el más cercano que no haya pasado ya.
+      - El nombre del día y el número que escribas tienen que ser los de la misma
+        línea. Decirle "miércoles 22" cuando el 22 es martes hace que el paciente
+        venga el día equivocado.
+
       {bookingStateBlock}
 
       ESTADO ACTUAL DEL FLUJO: {currentStep}
@@ -751,6 +779,7 @@ export class BrainService {
       currentDate,
       currentTime,
       currentDayOfWeek,
+      calendarioProximosDias,
       bookingStateBlock,
       supervisedBlock,
       ambiguityBlock,
@@ -1238,6 +1267,60 @@ export class BrainService {
  * ¿El paciente pidió EXPLÍCITAMENTE hablar con una persona?
  * Se normalizan acentos para que "recepcion" y "recepción" pesen igual.
  */
+const DIAS_SEMANA = [
+  'domingo',
+  'lunes',
+  'martes',
+  'miércoles',
+  'jueves',
+  'viernes',
+  'sábado',
+];
+
+const MESES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/**
+ * Corrige el nombre del día cuando no corresponde a la fecha que lo acompaña.
+ *
+ * El calendario del prompt evita el error casi siempre, pero "casi" no basta
+ * cuando la consecuencia es que alguien se presenta el día equivocado. Se hace
+ * que el nombre del día concuerde con el NÚMERO, que es lo que se guarda y lo
+ * que determina la hora real. Si el paciente pidió otro día, así lo ve en la
+ * respuesta y puede corregirlo; al revés se enteraría al llegar a la consulta.
+ */
+export function corregirDiaDeSemana(text: string, referencia: Date = new Date()): string {
+  if (!text) return text;
+
+  const dias = '(lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)';
+  const meses = '(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)';
+  const re = new RegExp(`\\b${dias}(\\s+\\d{1,2}\\s+de\\s+${meses})`, 'gi');
+
+  return text.replace(re, (match, _dia, resto) => {
+    const m = /(\d{1,2})\s+de\s+([a-zñáéíóú]+)/i.exec(resto);
+    if (!m) return match;
+
+    const dia = Number(m[1]);
+    const mes = MESES.indexOf(m[2].toLowerCase());
+    if (mes < 0 || !dia) return match;
+
+    // Una fecha muy anterior a hoy en el calendario solo puede ser del año que
+    // viene: nadie agenda hacia atrás.
+    let año = referencia.getFullYear();
+    const candidata = new Date(año, mes, dia);
+    if (candidata.getTime() < referencia.getTime() - 60 * 24 * 60 * 60 * 1000) {
+      año += 1;
+    }
+
+    const real = new Date(año, mes, dia);
+    if (real.getDate() !== dia || real.getMonth() !== mes) return match;
+
+    return `${DIAS_SEMANA[real.getDay()]}${resto}`;
+  });
+}
+
 const PALABRAS_POCO_DISTINTIVAS = new Set([
   'de', 'del', 'la', 'el', 'los', 'las', 'y', 'con', 'para', 'por', 'a',
   'general', 'dental', 'dentales', 'evaluacion', 'control', 'sesion',
@@ -1322,9 +1405,40 @@ export function esUrgenciaDental(text: string): boolean {
 
 export function sanitizeReply(text: string): string {
   if (!text) return text;
-  return text
-    .replace(/\bTe gustaría\b/g, 'Quieres')
-    .replace(/\bte gustaría\b/g, 'quieres');
+  return corregirDiaDeSemana(
+    limpiarMarkdownNoSoportado(
+      text
+        .replace(/\bTe gustaría\b/g, 'Quieres')
+        .replace(/\bte gustaría\b/g, 'quieres'),
+    ),
+  );
+}
+
+/**
+ * WhatsApp no entiende Markdown estándar: lo enseña tal cual. El prompt ya lo
+ * prohíbe, pero una prohibición en el prompt es probabilística y el doble
+ * asterisco se coló tres veces, incluida una respuesta con el precio de un
+ * tratamiento ("**$148.000**"). Aquí deja de depender de la suerte.
+ */
+export function limpiarMarkdownNoSoportado(text: string): string {
+  if (!text) return text;
+  return (
+    text
+      // **negrita** -> *negrita*, que es la de WhatsApp. Se hace antes que nada
+      // para no romperla al tocar los asteriscos sueltos.
+      .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
+      // ***texto*** y similares: cualquier resto de 3+ asteriscos seguidos.
+      .replace(/\*{3,}/g, '*')
+      // ### Título -> Título en negrita, que es lo más parecido que hay.
+      .replace(/^\s{0,3}#{1,6}\s+(.+)$/gm, '*$1*')
+      // [texto](url) -> texto: url. WhatsApp ya hace clicable la URL desnuda.
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1: $2')
+      // `código` y ```bloques```: los acentos graves se ven como basura.
+      .replace(/```+/g, '')
+      .replace(/`([^`\n]+)`/g, '$1')
+      // __subrayado__ del Markdown -> cursiva de WhatsApp.
+      .replace(/__([^_\n]+)__/g, '_$1_')
+  );
 }
 
 /** Frases con las que el modelo da por hecha una reserva. Solo afirmaciones:
