@@ -84,6 +84,39 @@ export class AgendaService {
     });
   }
 
+  /**
+   * Ausencias que solapan con el rango que muestra la agenda.
+   *
+   * Sin esto, un hueco por ausencia y un hueco por no tener pacientes se ven
+   * exactamente igual en pantalla: en blanco. Quien mira la agenda necesita
+   * distinguir "está libre" de "ese día no viene".
+   *
+   * Se acota al profesional conectado por el mismo motivo que las citas.
+   */
+  async findAbsences(clinicId: string, from: string, to: string, userId?: string) {
+    const propio = await this.doctorDelUsuario(clinicId, userId);
+
+    const absences = await this.prisma.doctorAbsence.findMany({
+      where: {
+        clinicId,
+        ...(propio ? { doctorId: propio } : {}),
+        startsAt: { lte: new Date(`${to}T23:59:59Z`) },
+        endsAt: { gte: new Date(`${from}T00:00:00Z`) },
+      },
+      include: { doctor: true },
+      orderBy: { startsAt: 'asc' },
+    });
+
+    return absences.map((a) => ({
+      id: a.id,
+      starts_at: a.startsAt,
+      ends_at: a.endsAt,
+      all_day: a.allDay,
+      reason: a.reason,
+      doctor: a.doctor ? { id: a.doctor.id, name: a.doctor.name } : null,
+    }));
+  }
+
   async findOneAppointment(clinicId: string, id: string, userId?: string) {
     const propio = await this.doctorDelUsuario(clinicId, userId);
     const appointment = await this.prisma.appointment.findFirst({

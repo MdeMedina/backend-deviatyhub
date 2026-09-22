@@ -40,6 +40,16 @@ export class AgendaController {
     return this.agendaService.findAllAppointments(clinicId, startDate, endDate, doctorId, userId);
   }
 
+  @Get('absences')
+  async findAbsences(
+    @CurrentClinicId() clinicId: string,
+    @CurrentUserId() userId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string
+  ) {
+    return this.agendaService.findAbsences(clinicId, startDate, endDate, userId);
+  }
+
   @Get('appointments/:id')
   async findOne(
     @CurrentClinicId() clinicId: string,
