@@ -716,7 +716,9 @@ export class BrainService {
 
       📋 DATOS NECESARIOS PARA AGENDAR. Se piden en este orden y no se puede reservar sin todos:
       1. Tratamiento: rellena "procedimiento_id" con el UUID que aparece entre corchetes como [ID: ...] en la lista de Tratamientos y Precios. Nunca pongas ahí el nombre del tratamiento.
-      2. Especialista: mira el bloque ESPECIALISTAS. Si lo atiende UNO SOLO, no preguntes nada y deja "doctor_id" vacío. Si lo atienden VARIOS, pregúntale con cuál prefiere ANTES de hablar de días y horas, y guarda el UUID en "doctor_id". Si te dice que le da igual, deja "doctor_id" vacío y sigue.
+      2. Especialista: cuenta cuántos aparecen en la línea de ESE tratamiento, en "Tratamientos y Precios".
+         - Si hay UNO SOLO: NO preguntes nada, deja "doctor_id" vacío y pasa directo a la fecha. El sistema lo asigna. Preguntar "¿con cuál prefieres?" ofreciendo una única opción es hacerle perder un turno al paciente por una elección que no existe.
+         - Si hay VARIOS: pregúntale con cuál prefiere ANTES de hablar de días y horas, ofreciendo solo a esos, y guarda su UUID en "doctor_id". Si te dice que le da igual, deja "doctor_id" vacío y sigue.
       3. Fecha: campo "fecha", formato DD/MM/YYYY.
       4. Hora: campo "hora", formato HH:MM.
       5. Nombre, Apellido y correo del paciente.
