@@ -972,6 +972,38 @@ export class BrainService {
       //  Volver a preguntarlo en este punto sería preguntar dos veces, y a un
       //  paciente que ya dijo "me da igual" le sonaría a que no se le escuchó.)
 
+      // 7.c Con un único especialista posible no hay nada que elegir.
+      //     La regla está en el prompt, pero el modelo seguía ofreciendo listas
+      //     de una sola opción ("- Dr. Miguel Medina. ¿Te acomoda con él?"), que
+      //     le gasta un turno al paciente por una decisión que no existe. Se
+      //     asigna aquí y, si la respuesta era esa pregunta, se sustituye por lo
+      //     siguiente que de verdad falta.
+      if (
+        finalStep !== 'concluido' &&
+        currentBooking.procedimiento_id &&
+        !currentBooking.doctor_id &&
+        doctoresDelTratamiento.length === 1
+      ) {
+        const unico = doctoresDelTratamiento[0];
+        currentBooking.doctor_id = unico.id;
+        await this.prisma.conversation.update({
+          where: { id: params.conversationId },
+          data: {
+            metadata: {
+              ...((existingMetadataAfter?.metadata as any) || {}),
+              booking: { ...currentBooking, doctor_id: unico.id },
+            },
+          },
+        });
+
+        if (preguntaPorEspecialista(replyText)) {
+          this.logger.log(
+            `Pregunta por especialista suprimida: ${unico.name} es el único que atiende ese tratamiento.`,
+          );
+          replyText = buildMissingDataReply(currentBooking);
+        }
+      }
+
       // 8. Guardarraíl: el modelo no puede dar por hecha una reserva que el
       //    sistema no ejecutó. Solo executeScheduling confirma, y ese camino ya
       //    sustituye el texto; si llegamos aquí sin 'concluido', la cita no
@@ -1468,6 +1500,26 @@ const BOOKING_CLAIM_PATTERNS = [
   /\b(tu|su)\s+(hora|cita)\s+(qued[oó]|est[aá]|ya)/i,
   /\breserva\s+(confirmada|realizada|hecha|lista)\b/i,
 ];
+
+/**
+ * ¿La respuesta está pidiéndole al paciente que elija especialista?
+ *
+ * Hace falta porque la regla de "no preguntes si solo hay uno" vive en el
+ * prompt, y una regla del prompt es probabilística: el agente seguía ofreciendo
+ * listas de una sola opción. Detectarlo permite sustituir la respuesta por la
+ * siguiente pregunta de verdad.
+ */
+export function preguntaPorEspecialista(text: string): boolean {
+  const t = (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (!t.includes('?')) return false;
+  return (
+    /\b(especialistas?|profesionales?|doctora?s?|dra?|dentista)\b/.test(t) &&
+    /\b(prefieres|prefiere|con cual|cual te|te acomoda con|quieres atenderte|eliges|escoges)\b/.test(t)
+  );
+}
 
 export function claimsBookingDone(text: string): boolean {
   if (!text) return false;
