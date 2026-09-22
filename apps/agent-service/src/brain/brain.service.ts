@@ -987,23 +987,30 @@ export class BrainService {
         currentBooking.procedimiento_id,
       );
 
+      //     Ojo: la supresión NO puede condicionarse a que "doctor_id" esté
+      //     vacío. El modelo rellena ese campo por su cuenta y AUN ASÍ formula
+      //     la pregunta, que era justo lo que seguía pasando: con el campo ya
+      //     puesto, la guarda se saltaba entera y la pregunta llegaba al
+      //     paciente. Asignar y suprimir son dos cosas independientes.
       if (
         finalStep !== 'concluido' &&
         currentBooking.procedimiento_id &&
-        !currentBooking.doctor_id &&
         especialistasDelElegido.length === 1
       ) {
         const unico = especialistasDelElegido[0];
-        currentBooking.doctor_id = unico.id;
-        await this.prisma.conversation.update({
-          where: { id: params.conversationId },
-          data: {
-            metadata: {
-              ...((existingMetadataAfter?.metadata as any) || {}),
-              booking: { ...currentBooking, doctor_id: unico.id },
+
+        if (currentBooking.doctor_id !== unico.id) {
+          currentBooking.doctor_id = unico.id;
+          await this.prisma.conversation.update({
+            where: { id: params.conversationId },
+            data: {
+              metadata: {
+                ...((existingMetadataAfter?.metadata as any) || {}),
+                booking: { ...currentBooking, doctor_id: unico.id },
+              },
             },
-          },
-        });
+          });
+        }
 
         if (preguntaPorEspecialista(replyText)) {
           this.logger.log(
