@@ -29,13 +29,18 @@ export class BrainService {
     private readonly humanTool: HumanTool,
     private readonly actionsTool: AppointmentActionsTool,
   ) {
+    const modelo = this.configService.get<string>('OPENAI_MODEL') || 'gpt-4o-mini';
     this.model = new ChatOpenAI({
       openAIApiKey: this.configService.get('OPENAI_API_KEY'),
       // Modelo del agente. Configurable porque es la palanca más directa contra
       // las invenciones, y cambiarla no debería exigir tocar el código: se ajusta
       // en el .env del servidor y se reinicia el servicio.
-      modelName: this.configService.get<string>('OPENAI_MODEL') || 'gpt-4o-mini',
-      temperature: 0,
+      modelName: modelo,
+      // La familia gpt-5 y los modelos de razonamiento SOLO aceptan la
+      // temperatura por defecto: enviarles 0 devuelve un 400 y el agente deja
+      // de responder por completo. Se decide por el modelo, no a mano, para
+      // que cambiarlo en el .env no pueda tumbar el servicio.
+      temperature: /^(gpt-5|o[1-9])/.test(modelo) ? 1 : 0,
       modelKwargs: {
         response_format: { type: 'json_object' }
       }

@@ -32,12 +32,17 @@ export class IntentionClassifier {
   private parser: JsonOutputParser<IntentResult>;
 
   constructor(private readonly configService: ConfigService) {
+    const modelo = this.configService.get<string>('OPENAI_CLASSIFIER_MODEL') || 'gpt-4o-mini';
     this.model = new ChatOpenAI({
       openAIApiKey: this.configService.get('OPENAI_API_KEY'),
       // El clasificador puede ir en un modelo más barato que el agente: su salida
       // es una etiqueta de un catálogo cerrado, no texto para un paciente.
-      modelName: this.configService.get<string>('OPENAI_CLASSIFIER_MODEL') || 'gpt-4o-mini',
-      temperature: 0,
+      modelName: modelo,
+      // La familia gpt-5 y los modelos de razonamiento SOLO aceptan la
+      // temperatura por defecto: enviarles 0 devuelve un 400 y el agente deja
+      // de responder por completo. Se decide por el modelo, no a mano, para
+      // que cambiarlo en el .env no pueda tumbar el servicio.
+      temperature: /^(gpt-5|o[1-9])/.test(modelo) ? 1 : 0,
     });
     this.parser = new JsonOutputParser<IntentResult>();
   }
