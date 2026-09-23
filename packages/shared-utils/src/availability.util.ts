@@ -198,3 +198,83 @@ export async function calcularHorasLibres(
 
   return slots;
 }
+
+/**
+ * Por qué no hay horas ese día.
+ *
+ * Existe porque devolver un "no hay disponibilidad" a secas deja al modelo sin
+ * explicación, y cuando no la tiene se la inventa: a un paciente que pidió el
+ * viernes 25 le respondió que ese día "ya pasó", faltando dos días para él y
+ * habiendo dicho el propio agente, un mensaje antes, que hoy era el 23.
+ *
+ * Solo se llama cuando no hay horas, así que el coste de estas consultas se
+ * paga en un camino poco frecuente.
+ */
+export async function explicarSinHoras(
+  prisma: any,
+  clinicId: string,
+  date: Date,
+  treatmentId?: string,
+  doctorId?: string,
+): Promise<string> {
+  const finDelDia = endOfDay(date);
+  if (finDelDia.getTime() < Date.now()) {
+    return 'ese día ya pasó';
+  }
+
+  const dayOfWeek = date.getDay();
+  const horarioClinica = await prisma.clinicSchedule.findFirst({ where: { clinicId, dayOfWeek } });
+  if (horarioClinica && horarioClinica.isOpen === false) {
+    return 'la clínica está cerrada ese día';
+  }
+
+  // Profesionales que pueden atender eso
+  let candidatos: { id: string; name: string }[] = [];
+  if (doctorId) {
+    const d = await prisma.doctor.findUnique({ where: { id: doctorId } });
+    if (d) candidatos = [{ id: d.id, name: d.name }];
+  } else if (treatmentId) {
+    const rel = await prisma.doctorTreatment.findMany({
+      where: { clinicId, treatmentId },
+      include: { doctor: true },
+    });
+    candidatos = rel
+      .filter((dt: any) => dt.doctor && dt.doctor.active !== false)
+      .map((dt: any) => ({ id: dt.doctor.id, name: dt.doctor.name }));
+  }
+
+  if (!candidatos.length) {
+    return 'no hay ningún profesional asignado a ese tratamiento';
+  }
+
+  const ids = candidatos.map((c) => c.id);
+  const [jornadas, ausencias] = await Promise.all([
+    prisma.doctorSchedule.findMany({ where: { clinicId, doctorId: { in: ids }, active: true } }),
+    prisma.doctorAbsence.findMany({
+      where: {
+        clinicId,
+        doctorId: { in: ids },
+        startsAt: { lt: endOfDay(date) },
+        endsAt: { gt: startOfDay(date) },
+      },
+    }),
+  ]);
+
+  const motivos: string[] = [];
+  for (const c of candidatos) {
+    const suyas = jornadas.filter((j: any) => j.doctorId === c.id);
+    const eseDia = suyas.filter((j: any) => j.dayOfWeek === dayOfWeek);
+
+    if (suyas.length && !eseDia.length) {
+      motivos.push(`${c.name} no atiende ese día de la semana`);
+      continue;
+    }
+    if (ausencias.some((a: any) => a.doctorId === c.id)) {
+      motivos.push(`${c.name} tiene una ausencia registrada ese día`);
+      continue;
+    }
+    motivos.push(`${c.name} tiene la agenda llena ese día`);
+  }
+
+  return motivos.join('; ');
+}

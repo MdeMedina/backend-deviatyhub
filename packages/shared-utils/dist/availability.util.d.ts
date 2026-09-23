@@ -20,5 +20,17 @@ export interface AvailabilityOptions {
     excluirPasado?: boolean;
 }
 export declare function calcularHorasLibres(prisma: any, clinicId: string, date: Date, treatmentId?: string, doctorId?: string, options?: AvailabilityOptions): Promise<string[]>;
+/**
+ * Por qué no hay horas ese día.
+ *
+ * Existe porque devolver un "no hay disponibilidad" a secas deja al modelo sin
+ * explicación, y cuando no la tiene se la inventa: a un paciente que pidió el
+ * viernes 25 le respondió que ese día "ya pasó", faltando dos días para él y
+ * habiendo dicho el propio agente, un mensaje antes, que hoy era el 23.
+ *
+ * Solo se llama cuando no hay horas, así que el coste de estas consultas se
+ * paga en un camino poco frecuente.
+ */
+export declare function explicarSinHoras(prisma: any, clinicId: string, date: Date, treatmentId?: string, doctorId?: string): Promise<string>;
 export {};
 //# sourceMappingURL=availability.util.d.ts.map

@@ -34,7 +34,9 @@ export class IntentionClassifier {
   constructor(private readonly configService: ConfigService) {
     this.model = new ChatOpenAI({
       openAIApiKey: this.configService.get('OPENAI_API_KEY'),
-      modelName: 'gpt-4o-mini',
+      // El clasificador puede ir en un modelo más barato que el agente: su salida
+      // es una etiqueta de un catálogo cerrado, no texto para un paciente.
+      modelName: this.configService.get<string>('OPENAI_CLASSIFIER_MODEL') || 'gpt-4o-mini',
       temperature: 0,
     });
     this.parser = new JsonOutputParser<IntentResult>();

@@ -6,6 +6,7 @@ import { AgentExecutor, createOpenAIFunctionsAgent } from 'langchain/agents';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
+import { explicarSinHoras } from '@deviaty/shared-utils';
 import { IntentionClassifier, Intent } from './intention.classifier';
 import { StateManager, ConversationStep } from './state.manager';
 import { AvailabilityTool } from '../tools/availability.tool';
@@ -30,7 +31,10 @@ export class BrainService {
   ) {
     this.model = new ChatOpenAI({
       openAIApiKey: this.configService.get('OPENAI_API_KEY'),
-      modelName: 'gpt-4o-mini',
+      // Modelo del agente. Configurable porque es la palanca más directa contra
+      // las invenciones, y cambiarla no debería exigir tocar el código: se ajusta
+      // en el .env del servidor y se reinicia el servicio.
+      modelName: this.configService.get<string>('OPENAI_MODEL') || 'gpt-4o-mini',
       temperature: 0,
       modelKwargs: {
         response_format: { type: 'json_object' }
@@ -202,8 +206,20 @@ export class BrainService {
             const conQuien = nombreDoctor ? ` con ${nombreDoctor}` : '';
 
             if (slots.length === 0) {
-              // Sin horas de ese profesional, el paciente necesita saber si otro
-              // sí puede; si no, se queda con un "no hay" que no le sirve.
+              // El motivo va SIEMPRE. Un "no hay disponibilidad" a secas deja al
+              // modelo sin explicación que dar, y entonces se la inventa: a un
+              // paciente que pidió el viernes 25 le dijo que ese día ya había
+              // pasado, faltando dos días y habiendo afirmado él mismo, un
+              // mensaje antes, que hoy era 23.
+              const motivo = await explicarSinHoras(
+                this.prisma,
+                params.clinicId,
+                localDate,
+                tratamientoEfectivo,
+                doctorEfectivo,
+              );
+              const yaPaso = motivo === 'ese día ya pasó';
+
               const alternativas = await this.horasDeOtrosEspecialistas(
                 params.clinicId,
                 localDate,
@@ -211,10 +227,18 @@ export class BrainService {
                 doctorEfectivo,
                 candidatos,
               );
-              if (alternativas) {
-                return `No quedan horas${conQuien} ese día. Otros especialistas que sí atienden ese tratamiento: ${alternativas}`;
-              }
-              return `No hay disponibilidad${conQuien} ese día.`;
+
+              const conOtros = alternativas
+                ? ` Sí atienden ese día: ${alternativas}.`
+                : '';
+
+              return (
+                `Sin horas${conQuien} el ${date}. MOTIVO: ${motivo}.${conOtros}` +
+                ` Explícale el motivo con tus palabras y ofrécele una alternativa.` +
+                (yaPaso
+                  ? ''
+                  : ` ESA FECHA NO HA PASADO: es una fecha futura y tienes PROHIBIDO decirle al paciente lo contrario.`)
+              );
             }
 
             // Cuando el paciente pidió una hora concreta, la herramienta

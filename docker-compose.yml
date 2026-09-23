@@ -127,6 +127,10 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Modelos. Sin valor en el .env se usan los del código (gpt-4o-mini), así
+      # que cambiarlos es editar el .env del servidor y reiniciar el servicio.
+      - OPENAI_MODEL=${OPENAI_MODEL:-}
+      - OPENAI_CLASSIFIER_MODEL=${OPENAI_CLASSIFIER_MODEL:-}
     depends_on:
       postgres:
         condition: service_healthy

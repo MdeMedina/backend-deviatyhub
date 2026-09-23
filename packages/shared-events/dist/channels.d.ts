@@ -11,6 +11,7 @@ export declare enum REDIS_CHANNELS {
     APPOINTMENT_SCHEDULED = "appointment.scheduled",
     APPOINTMENT_RESCHEDULED = "appointment.rescheduled",
     APPOINTMENT_CANCELLED = "appointment.cancelled",
+    CONVERSATION_MESSAGE = "conversation.message",
     CONVERSATION_CLOSED = "conversation.closed",
     HUMAN_ESCALATION = "human.escalation",
     METRICS_EVENT = "metrics.event"
