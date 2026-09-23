@@ -1570,9 +1570,21 @@ export function preguntaPorEspecialista(text: string): boolean {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
   if (!t.includes('?')) return false;
+
+  // Hablar de un profesional y preguntar algo NO es pedir que elija
+  // profesional. "La Dra. López no atiende los viernes, ¿prefieres otro día?"
+  // encajaba en el patrón y se sustituía por un genérico, tirando a la basura
+  // justamente la explicación que el paciente necesitaba.
+  const esOtraCosa =
+    /\b(no atiende|no trabaja|no tiene libre|ausencia|ya no est|otro dia|otra fecha|otra hora|que dia|que hora)\b/.test(t);
+  if (esOtraCosa) return false;
+
+  // La pregunta tiene que ser por CUÁL de ellos, no por cualquier cosa que
+  // mencione a un profesional.
   return (
-    /\b(especialistas?|profesionales?|doctora?s?|dra?|dentista)\b/.test(t) &&
-    /\b(prefieres|prefiere|con cual|cual te|te acomoda con|quieres atenderte|eliges|escoges)\b/.test(t)
+    /\b(con (cual|quien|que)\b|cual de (ellos|los|las)|que (especialista|profesional|doctora?|dentista)\b)/.test(t) ||
+    /\b(especialistas?|profesionales?|doctora?s?|dentista)\b[\s\S]{0,40}\b(prefieres|prefiere|eliges|escoges|quieres atenderte)\b/.test(t) ||
+    /\b(prefieres|prefiere|eliges|escoges)\b[\s\S]{0,40}\b(especialistas?|profesionales?|doctora?s?|dentista)\b/.test(t)
   );
 }
 
