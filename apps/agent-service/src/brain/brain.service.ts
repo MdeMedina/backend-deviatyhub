@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { AgentExecutor, createOpenAIFunctionsAgent } from 'langchain/agents';
+import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
@@ -40,9 +40,22 @@ export class BrainService {
       // temperatura por defecto: enviarles 0 devuelve un 400 y el agente deja
       // de responder por completo. Se decide por el modelo, no a mano, para
       // que cambiarlo en el .env no pueda tumbar el servicio.
-      temperature: /^(gpt-5|o[1-9])/.test(modelo) ? 1 : 0,
+      temperature: esDeRazonamiento(modelo) ? 1 : 0,
       modelKwargs: {
-        response_format: { type: 'json_object' }
+        response_format: { type: 'json_object' },
+        // Un modelo de razonamiento "piensa" antes de responder, y eso se paga
+        // en segundos. Medido con nuestro prompt real (~8.000 tokens):
+        // gpt-5-mini tardaba 28,8s por llamada gastando 704 tokens de
+        // razonamiento; con 'minimal' baja a 4,0s y 0 tokens. El esfuerzo crece
+        // con el tamaño del prompt, así que con uno grande el valor por defecto
+        // es inasumible para WhatsApp, donde cada mensaje es un turno.
+        //
+        // Aquí el razonamiento aporta poco: las decisiones que de verdad
+        // importan (disponibilidad, especialista, fechas) ya se resuelven en
+        // código y llegan masticadas en el prompt y en las herramientas.
+        ...(esDeRazonamiento(modelo)
+          ? { reasoning_effort: this.configService.get<string>('OPENAI_REASONING_EFFORT') || 'minimal' }
+          : {}),
       }
     });
   }
@@ -797,7 +810,14 @@ export class BrainService {
       new MessagesPlaceholder('agent_scratchpad'),
     ]);
 
-    const agent = await createOpenAIFunctionsAgent({
+    // createToolCallingAgent y no createOpenAIFunctionsAgent: el segundo usa la
+    // API antigua de "functions", que manda mensajes con role: 'function'. Los
+    // modelos gpt-5 la rechazan con
+    //   400 Unsupported value: 'messages[N].role' does not support 'function'
+    // así que con ellos fallaba TODA conversación que invocara una herramienta.
+    // Además OpenAI tiene esa API marcada como obsoleta, así que el cambio hay
+    // que hacerlo igualmente.
+    const agent = await createToolCallingAgent({
       llm: this.model,
       tools: tools as any[],
       prompt,
@@ -1378,6 +1398,11 @@ export class BrainService {
  * ¿El paciente pidió EXPLÍCITAMENTE hablar con una persona?
  * Se normalizan acentos para que "recepcion" y "recepción" pesen igual.
  */
+/** Familias que razonan antes de responder y solo aceptan su temperatura por defecto. */
+function esDeRazonamiento(modelo: string): boolean {
+  return /^(gpt-5|o[1-9])/.test(modelo || '');
+}
+
 const DIAS_SEMANA = [
   'domingo',
   'lunes',

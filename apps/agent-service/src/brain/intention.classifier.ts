@@ -43,6 +43,11 @@ export class IntentionClassifier {
       // de responder por completo. Se decide por el modelo, no a mano, para
       // que cambiarlo en el .env no pueda tumbar el servicio.
       temperature: /^(gpt-5|o[1-9])/.test(modelo) ? 1 : 0,
+      // Clasificar en una etiqueta de un catálogo cerrado no necesita
+      // razonamiento, y aquí cada segundo se suma al que ya cuesta el agente.
+      ...(/^(gpt-5|o[1-9])/.test(modelo)
+        ? { modelKwargs: { reasoning_effort: 'minimal' } }
+        : {}),
     });
     this.parser = new JsonOutputParser<IntentResult>();
   }
