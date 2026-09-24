@@ -1169,6 +1169,36 @@ export class BrainService {
         return !/^\s*(no se pudo|error|\[simulado\])/i.test(salida);
       });
 
+      // Cambio ya aplicado: lo que toca es confirmarlo, no pedir datos.
+      //
+      // Tras mover una hora el agente respondía "indícame tu nombre, apellido y
+      // correo para la ficha". Los tenía: son los de la cita que acababa de
+      // cambiar. El paciente acaba creyendo que el cambio no se hizo y
+      // repitiendo datos que ya dio. La regla estaba en el prompt y el modelo
+      // la ignoraba, así que pasa a resolverse aquí.
+      if (cambioEjecutado && pideDatosPersonales(replyText)) {
+        const cita = await this.prisma.appointment.findFirst({
+          where: {
+            clinicId: params.clinicId,
+            ...(params.contact?.id ? { contactId: params.contact.id } : {}),
+            status: { notIn: ['CANCELLED'] },
+          },
+          include: { treatment: true, doctor: true },
+          orderBy: { updatedAt: 'desc' },
+        });
+
+        if (cita) {
+          this.logger.log(
+            `Petición de datos personales suprimida: la cita ${cita.id} ya se cambió en este turno.`,
+          );
+          const conQuien = cita.doctor?.name ? ` con *${cita.doctor.name}*` : '';
+          replyText =
+            `Listo, tu hora de *${cita.treatment?.name ?? 'atención'}* queda para el ` +
+            `*${formatFechaHumana(cita.scheduledAt)}* a las *${format(cita.scheduledAt, 'HH:mm')}*` +
+            `${conQuien}.\n\nNo necesito nada más. Si quieres cambiarla otra vez, avísame.`;
+        }
+      }
+
       if (finalStep !== 'concluido' && !cambioEjecutado && claimsBookingDone(replyText)) {
         this.logger.error(
           `El modelo anunció una cita no agendada (paso real: ${finalStep}). Respuesta sustituida.`,
@@ -1747,6 +1777,23 @@ const BOOKING_CLAIM_PATTERNS = [
  * listas de una sola opción. Detectarlo permite sustituir la respuesta por la
  * siguiente pregunta de verdad.
  */
+/**
+ * ¿La respuesta está pidiendo los datos personales del paciente?
+ *
+ * Hace falta porque tras mover una hora el agente seguía pidiendo nombre,
+ * apellido y correo "para la ficha". Ya los tenía: son los de la cita que
+ * acababa de cambiar. Al paciente le queda la sensación de que el cambio no se
+ * hizo y de que tiene que empezar otra vez.
+ */
+export function pideDatosPersonales(text: string): boolean {
+  const t = (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return /\b(nombre|apellido|correo|email|mail)\b/.test(t) &&
+    /\b(indicame|dame|necesito|me (los|lo|la)|facilitame|entregame|confirmame|cual es|me das|compartes|para la ficha|para completar)\b/.test(t);
+}
+
 export function preguntaPorEspecialista(text: string): boolean {
   const t = (text || '')
     .toLowerCase()
