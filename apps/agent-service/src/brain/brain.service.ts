@@ -929,6 +929,24 @@ export class BrainService {
         doctor_id: parsedJson.doctor_id || existingMetadata.booking?.doctor_id || '',
       };
       
+      // El apellido que el paciente escribió y el modelo se dejó.
+      if (updatedBooking.Nombre && !updatedBooking.Apellido) {
+        const dichoPorElPaciente = [
+          ...(params.history || [])
+            .filter((m: any) => String(m.role).toUpperCase() === 'USER')
+            .map((m: any) => String(m.content || '')),
+          params.userInput,
+        ];
+        const apellido = recuperarApellido(updatedBooking.Nombre, dichoPorElPaciente);
+        if (apellido) {
+          this.logger.log(
+            `Apellido recuperado de lo que escribió el paciente: "${apellido}". El modelo solo había guardado "${updatedBooking.Nombre}".`,
+          );
+          updatedBooking.Nombre = String(updatedBooking.Nombre).split(/\s+/)[0];
+          updatedBooking.Apellido = apellido;
+        }
+      }
+
       // Contraste del tratamiento elegido con lo que pidió el paciente.
       // El modelo fija el tratamiento copiando un UUID, y un UUID equivocado no
       // se nota en ninguna parte: un paciente pidió endodoncia durante toda la
@@ -1474,6 +1492,50 @@ export class BrainService {
  * ¿El paciente pidió EXPLÍCITAMENTE hablar con una persona?
  * Se normalizan acentos para que "recepcion" y "recepción" pesen igual.
  */
+/**
+ * Recupera el apellido que el paciente escribió y el modelo se dejó.
+ *
+ * Ante "Miguel Medina, correo@x.com" el modelo guarda Nombre="Miguel",
+ * Apellido="" y a continuación pide el apellido: hace repetir al paciente algo
+ * que acaba de decir. Ocurre de forma sistemática, no de vez en cuando.
+ *
+ * Partir un nombre no requiere criterio, así que no se deja al modelo. Solo
+ * actúa sobre lo que el PACIENTE escribió, nunca sobre texto del agente, y solo
+ * cuando el nombre de pila ya está identificado: así no hay que adivinar dónde
+ * empieza el nombre dentro de una frase cualquiera.
+ */
+export function recuperarApellido(
+  nombre: string | undefined,
+  textosDelPaciente: string[],
+): string {
+  const pila = String(nombre || '').trim();
+  if (!pila) return '';
+
+  // Si el propio campo ya trae el nombre completo, basta con partirlo.
+  const partes = pila.split(/\s+/);
+  if (partes.length > 1) return partes.slice(1).join(' ');
+
+  // "Miguel Medina", "Miguel Medina Soto", "miguel medina": el apellido es lo
+  // que sigue al nombre de pila. Se admiten dos, que en Chile es lo habitual.
+  const escapado = pila.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(
+    `\\b${escapado}\\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{2,}(?:\\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{2,})?)`,
+    'i',
+  );
+
+  // Del más reciente al más antiguo: si se corrigió, manda lo último que dijo.
+  for (const texto of [...textosDelPaciente].reverse()) {
+    const m = re.exec(String(texto || ''));
+    if (!m) continue;
+    const candidato = m[1].trim();
+    // Palabras que siguen al nombre pero no son un apellido.
+    if (/^(y|es|mi|el|la|con|para|por|correo|email|gracias|soy)\b/i.test(candidato)) continue;
+    return candidato;
+  }
+
+  return '';
+}
+
 /** Familias que razonan antes de responder y solo aceptan su temperatura por defecto. */
 function esDeRazonamiento(modelo: string): boolean {
   return /^(gpt-5|o[1-9])/.test(modelo || '');
