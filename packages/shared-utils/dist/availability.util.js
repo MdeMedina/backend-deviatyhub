@@ -24,7 +24,7 @@ const intersectarTramos = (a, b) => {
 };
 exports.intersectarTramos = intersectarTramos;
 async function calcularHorasLibres(prisma, clinicId, date, treatmentId, doctorId, options = {}) {
-    const { excluirPasado = true } = options;
+    const { excluirPasado = true, excluirCitaId } = options;
     // 1. Duración de la reserva
     let durationMin = 30;
     if (treatmentId) {
@@ -93,6 +93,7 @@ async function calcularHorasLibres(prisma, clinicId, date, treatmentId, doctorId
                 doctorId: { in: doctorIds },
                 scheduledAt: { gte: (0, date_fns_1.startOfDay)(date), lte: (0, date_fns_1.endOfDay)(date) },
                 status: { not: 'CANCELLED' },
+                ...(excluirCitaId ? { id: { not: excluirCitaId } } : {}),
             },
         }),
     ]);

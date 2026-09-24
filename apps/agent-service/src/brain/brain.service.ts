@@ -244,11 +244,19 @@ export class BrainService {
             const doctorEfectivo = bookingState.doctor_id || doctor_id;
             const tratamientoEfectivo = bookingState.procedimiento_id || treatment_id;
 
+            // Si el paciente está moviendo una hora, esa hora no puede
+            // bloquearse a sí misma. Sin esto, tras cambiarla a las 17:00 la
+            // siguiente comprobación daba las 17:00 por ocupadas —por su propia
+            // cita— y la hora rebotaba entre horarios sin quedarse en ninguno.
+            const citaQueSeMueve =
+              bookingState.cita_id || (citasActivas.length === 1 ? citasActivas[0].id : undefined);
+
             const slots = await this.availabilityTool.getAvailableSlots(
               params.clinicId,
               localDate,
               tratamientoEfectivo,
               doctorEfectivo,
+              citaQueSeMueve,
             );
 
             // Se resuelven aquí y no se reutiliza la lista del principio del

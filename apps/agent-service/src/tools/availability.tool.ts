@@ -19,11 +19,15 @@ export class AvailabilityTool {
     date: Date,
     treatmentId?: string,
     doctorId?: string,
+    /** Cita que se está moviendo: su hora actual no cuenta como ocupada. */
+    excluirCitaId?: string,
   ): Promise<string[]> {
     this.logger.log(
       `Consultando disponibilidad para clínica ${clinicId} en fecha ${format(date, 'yyyy-MM-dd')} ` +
         `(Treatment: ${treatmentId || 'N/A'}, Doctor: ${doctorId || 'N/A'})`,
     );
-    return calcularHorasLibres(this.prisma, clinicId, date, treatmentId, doctorId);
+    return calcularHorasLibres(this.prisma, clinicId, date, treatmentId, doctorId, {
+      excluirCitaId,
+    });
   }
 }

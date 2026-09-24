@@ -37,6 +37,15 @@ export const intersectarTramos = (a: Tramo[], b: Tramo[]): Tramo[] => {
 export interface AvailabilityOptions {
   /** Excluir las horas ya pasadas cuando la fecha consultada es hoy. */
   excluirPasado?: boolean;
+  /**
+   * Cita que se está moviendo. Su hora actual NO cuenta como ocupada.
+   *
+   * Sin esto, al reprogramar, la propia cita del paciente bloquea la hora a la
+   * que se la acaba de mover: el agente la cambiaba a las 17:00 y acto seguido
+   * informaba de que las 17:00 no estaban libres. El paciente elegía otra, se
+   * repetía, y la hora acababa rebotando de un lado a otro.
+   */
+  excluirCitaId?: string;
 }
 
 export async function calcularHorasLibres(
@@ -47,7 +56,7 @@ export async function calcularHorasLibres(
   doctorId?: string,
   options: AvailabilityOptions = {},
 ): Promise<string[]> {
-  const { excluirPasado = true } = options;
+  const { excluirPasado = true, excluirCitaId } = options;
 
   // 1. Duración de la reserva
   let durationMin = 30;
@@ -115,6 +124,7 @@ export async function calcularHorasLibres(
         doctorId: { in: doctorIds },
         scheduledAt: { gte: startOfDay(date), lte: endOfDay(date) },
         status: { not: 'CANCELLED' },
+        ...(excluirCitaId ? { id: { not: excluirCitaId } } : {}),
       },
     }),
   ]);

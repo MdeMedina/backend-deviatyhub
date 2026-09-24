@@ -18,6 +18,15 @@ export declare const intersectarTramos: (a: Tramo[], b: Tramo[]) => Tramo[];
 export interface AvailabilityOptions {
     /** Excluir las horas ya pasadas cuando la fecha consultada es hoy. */
     excluirPasado?: boolean;
+    /**
+     * Cita que se está moviendo. Su hora actual NO cuenta como ocupada.
+     *
+     * Sin esto, al reprogramar, la propia cita del paciente bloquea la hora a la
+     * que se la acaba de mover: el agente la cambiaba a las 17:00 y acto seguido
+     * informaba de que las 17:00 no estaban libres. El paciente elegía otra, se
+     * repetía, y la hora acababa rebotando de un lado a otro.
+     */
+    excluirCitaId?: string;
 }
 export declare function calcularHorasLibres(prisma: any, clinicId: string, date: Date, treatmentId?: string, doctorId?: string, options?: AvailabilityOptions): Promise<string[]>;
 /**
