@@ -1763,10 +1763,20 @@ export function limpiarMarkdownNoSoportado(text: string): string {
 /** Frases con las que el modelo da por hecha una reserva. Solo afirmaciones:
  *  una pregunta como "¿quieres que te la deje agendada?" no cuenta. */
 const BOOKING_CLAIM_PATTERNS = [
+  // Reserva nueva
   /\bagendad[oa]\b\s*(para|el|:)/i,
   /\b(qued[oó]|quedar[oó]n|est[aá]|ya est[aá])\s+(agendad[oa]|reservad[oa]|confirmad[oa])/i,
   /\b(tu|su)\s+(hora|cita)\s+(qued[oó]|est[aá]|ya)/i,
   /\breserva\s+(confirmada|realizada|hecha|lista)\b/i,
+  // Cambio o anulación de una hora existente. Faltaban: el agente dijo "he
+  // reprogramado tu hora" con la herramienta devolviendo que no se había
+  // ejecutado, y la frase no encajaba en ningún patrón, así que pasó entera.
+  /\b(he|hemos)\s+(reprogramad[oa]|reagendad[oa]|cambiad[oa]|movid[oa]|cancelad[oa]|anulad[oa])\b/i,
+  // El "que" delante lo convierte en propuesta, no en hecho consumado:
+  // "¿quieres que reprograme tu hora?" no afirma nada.
+  /(?<!\bque\s)\b(reprogram[ée]|reagend[ée]|cambi[ée]|mov[ií]|cancel[ée]|anul[ée])\s+(tu|su|la)\b/i,
+  /\b(reprogramaci[oó]n|reagendamiento|cambio|cancelaci[oó]n)\s+(realizad[oa]|hech[oa]|confirmad[oa]|list[oa]|exitos[oa])\b/i,
+  /\b(tu|su)\s+(hora|cita)\s+(fue|ha sido|qued[oó])\s+(reprogramad[oa]|cambiad[oa]|movid[oa]|cancelad[oa]|anulad[oa])\b/i,
 ];
 
 /**
