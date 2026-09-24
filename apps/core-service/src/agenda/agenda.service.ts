@@ -139,7 +139,21 @@ export class AgendaService {
   }
 
   async createAppointment(clinicId: string, dto: any) {
-    const { contact_id, contact_name, contact_phone, treatment_id, doctor_id, scheduled_at, ...rest } = dto;
+    const {
+      contact_id,
+      contact_name,
+      contact_phone,
+      treatment_id,
+      doctor_id,
+      scheduled_at,
+      // Los campos que el DTO acepta en snake_case se traducen uno a uno. Antes
+      // el resto del DTO se volcaba tal cual en Prisma, que espera camelCase:
+      // mandar conversation_id (un campo documentado y válido) reventaba la
+      // petición con un 500 y un error de Prisma, no con una validación.
+      conversation_id,
+      source,
+      notes,
+    } = dto;
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Resolver contacto
@@ -183,7 +197,9 @@ export class AgendaService {
           scheduledAt: scheduled_at,
           durationMin: treatment.durationAvgMin || 30,
           contactName: contact_name,
-          ...rest,
+          ...(conversation_id ? { conversationId: conversation_id } : {}),
+          ...(source ? { source } : {}),
+          ...(notes ? { notes } : {}),
         },
       });
 
@@ -192,7 +208,9 @@ export class AgendaService {
         data: {
           appointmentId: appointment.id,
           event: 'created',
-          payload: { source: rest.source || 'AGENT' },
+          // La fecha y el autor faltaban: el detalle de la cita mostraba
+          // "created — INVALID DATE, Por: ()".
+          payload: { source: source || 'AGENT', at: new Date().toISOString() },
         },
       });
 
