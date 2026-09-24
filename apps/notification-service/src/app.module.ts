@@ -45,6 +45,7 @@ import { EventBus } from '@deviaty/shared-events';
   providers: [
     EmailService,
     NotificationListener,
+    ReminderService,
     {
       provide: EventBus,
       useFactory: (config: ConfigService) => {
@@ -54,7 +55,7 @@ import { EventBus } from '@deviaty/shared-events';
           password: config.get('REDIS_PASSWORD'),
         });
       },
-      inject: [ConfigService, ReminderService],
+      inject: [ConfigService],
     },
   ],
 })
