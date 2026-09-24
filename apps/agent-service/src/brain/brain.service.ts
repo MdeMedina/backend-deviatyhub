@@ -117,6 +117,45 @@ export class BrainService {
       doctor_id?: string;
     };
 
+    // Citas futuras de este paciente, ya resueltas.
+    //
+    // Sin esto, quien pedía cambiar su hora acababa dando de nuevo el
+    // tratamiento, el nombre y el correo: el bloque de DATOS NECESARIOS PARA
+    // AGENDAR y un estado de reserva vacío dominan el prompt, y las reglas de
+    // reprogramación competían contra eso y perdían. Con las citas delante y su
+    // identificador, el agente no tiene que ir a buscarlas ni puede inventarlas.
+    const citasActivas = params.contact?.id
+      ? await this.prisma.appointment.findMany({
+          where: {
+            clinicId: params.clinicId,
+            contactId: params.contact.id,
+            status: { notIn: ['CANCELLED', 'COMPLETED'] },
+            scheduledAt: { gte: new Date() },
+          },
+          include: { treatment: true, doctor: true },
+          orderBy: { scheduledAt: 'asc' },
+          take: 5,
+        })
+      : [];
+
+    const citasActivasBlock = citasActivas.length
+      ? `📌 HORAS QUE ESTE PACIENTE YA TIENE RESERVADAS:\n` +
+        citasActivas
+          .map(
+            (a: any) =>
+              `- [cita_id: ${a.id}] ${a.treatment?.name ?? 'Tratamiento'} el ` +
+              `${formatFechaHumana(a.scheduledAt)} a las ${format(a.scheduledAt, 'HH:mm')}` +
+              `${a.doctor?.name ? ` con ${a.doctor.name}` : ''}`,
+          )
+          .join('\n') +
+        `\n\nSi quiere CAMBIAR o ANULAR una de estas, NO es una reserva nueva:\n` +
+        `- No le vuelvas a pedir el tratamiento, ni el nombre, ni el correo: ya los tiene esa hora.\n` +
+        `- Lo único que necesitas es CUÁL de estas horas y, si la cambia, el nuevo día y la nueva hora.\n` +
+        `- Con una sola hora reservada, es esa: no le preguntes cuál.\n` +
+        `- Para cambiarla invoca 'reschedule_appointment' con ese cita_id. Para anularla, 'cancel_appointment'.\n` +
+        `- No des el cambio por hecho hasta que la herramienta responda que salió bien.`
+      : '';
+
     const bookingStateBlock = `ESTADO DE AGENDAMIENTO PERSISTIDO EN BASE DE DATOS:
 - Cita ID a modificar/cancelar (cita_id): ${bookingState.cita_id || 'vacío'}
 - Procedimiento ID (procedimiento_id): ${bookingState.procedimiento_id || 'vacío'}
@@ -747,6 +786,8 @@ export class BrainService {
         línea. Decirle "miércoles 22" cuando el 22 es martes hace que el paciente
         venga el día equivocado.
 
+      {citasActivasBlock}
+
       {bookingStateBlock}
 
       ESTADO ACTUAL DEL FLUJO: {currentStep}
@@ -764,6 +805,7 @@ export class BrainService {
       3. Fecha: campo "fecha", formato DD/MM/YYYY.
       4. Hora: campo "hora", formato HH:MM.
       5. Nombre, Apellido y correo del paciente.
+      - ESTA LISTA SOLO APLICA A UNA HORA NUEVA. Si el paciente quiere cambiar o anular una de las que ya tiene (mira el bloque de HORAS RESERVADAS), NO recorras esta lista: no necesitas tratamiento, ni nombre, ni correo, porque esa hora ya los tiene. Pedírselos otra vez le hace repetir lo que ya dio y el cambio no llega a hacerse.
       - Mira el ESTADO DE AGENDAMIENTO PERSISTIDO y pide SOLO el primer dato que falte, uno por mensaje.
       - Antes de pedir cualquier dato, repasa TODO el historial de la conversación: si el paciente ya lo dijo en algún mensaje anterior, rellénalo en el JSON y no lo vuelvas a preguntar.
       - REGLA INVIOLABLE: solo puedes rellenar un campo con lo que el paciente haya dicho de forma explícita. Tienes PROHIBIDO elegir por él. Si le ofreciste varias horas y aún no ha escogido ninguna, "hora" se queda VACÍO aunque te haya dado su nombre o su correo: nunca tomes la primera de la lista por defecto. Reservarle una hora que no eligió es peor que no reservarle nada.
@@ -849,6 +891,7 @@ export class BrainService {
       currentDayOfWeek,
       calendarioProximosDias,
       bookingStateBlock,
+      citasActivasBlock,
       supervisedBlock,
       ambiguityBlock,
       especialistasBlock,
