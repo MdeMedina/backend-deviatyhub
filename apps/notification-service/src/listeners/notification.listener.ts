@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { enviarYRegistrar } from '../outbound.util';
 
 @Injectable()
 export class NotificationListener implements OnModuleInit {
@@ -97,7 +98,7 @@ export class NotificationListener implements OnModuleInit {
         const telefono = (cita.contact as any)?.phone;
 
         if (telefono) {
-          await this.eventBus.publish('message.outbound', {
+          await enviarYRegistrar(this.prisma, this.eventBus, this.logger, {
             recipient: telefono,
             content: texto,
             conversationId: (cita as any).conversationId ?? null,

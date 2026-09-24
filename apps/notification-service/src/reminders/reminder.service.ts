@@ -4,6 +4,7 @@ import { PrismaService } from '@deviaty/shared-prisma';
 import { EventBus } from '@deviaty/shared-events';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { enviarYRegistrar } from '../outbound.util';
 
 /**
  * Los tres avisos, del más lejano al más cercano.
@@ -102,7 +103,7 @@ export class ReminderService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    await this.eventBus.publish('message.outbound', {
+    await enviarYRegistrar(this.prisma, this.eventBus, this.logger, {
       recipient: telefono,
       content: this.mensaje(cita, aEnviar.etiqueta),
       conversationId: cita.conversationId ?? null,
