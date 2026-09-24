@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthController } from './health.controller';
 import { EmailService } from './email/email.service';
 import { NotificationListener } from './listeners/notification.listener';
+import { ReminderService } from './reminders/reminder.service';
 import { EventBus } from '@deviaty/shared-events';
 
 @Module({
@@ -53,7 +54,7 @@ import { EventBus } from '@deviaty/shared-events';
           password: config.get('REDIS_PASSWORD'),
         });
       },
-      inject: [ConfigService],
+      inject: [ConfigService, ReminderService],
     },
   ],
 })

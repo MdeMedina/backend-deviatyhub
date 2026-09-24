@@ -151,6 +151,8 @@ services:
     ports:
       - "3004:3004"
     environment:
+      # Cada cuántos minutos se revisan los recordatorios (3 días, 1 día, 2 horas).
+      - REMINDER_INTERVAL_MIN=${REMINDER_INTERVAL_MIN:-5}
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
       # descartaba como pasada toda la tarde.

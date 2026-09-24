@@ -654,6 +654,7 @@ export class BrainService {
       REGLAS CRÍTICAS DE COMPORTAMIENTO:
       - Responde siempre en el mismo idioma que el usuario ({detectedLanguage}).
       - Redacta el campo 'reply' siguiendo estrictamente la sección "ESTILO Y FORMATO DE RESPUESTA". Esa sección define longitud, formato de WhatsApp, tono y ortografía. No apliques ningún otro criterio de longitud.
+      - NO OFREZCAS NADA QUE NO PUEDAS HACER. Solo existe lo que tus herramientas permiten: informar, agendar, reprogramar, cancelar y avisar al equipo. Tienes PROHIBIDO ofrecer comprobantes, resúmenes o confirmaciones por correo, recordatorios a medida, llamadas telefónicas, adjuntar documentos o "avisar más tarde". Nada de eso ocurre, así que el paciente se queda esperando algo que no va a llegar y lo descubre el día de su hora.
       - PALABRAS PROHIBIDAS EN 'reply', sin excepción: "cita" (di "hora"), "te gustaría" (di "te acomoda", "te sirve" o "prefieres"), "házmelo saber", "no dudes en consultarme", "estoy aquí para ayudarte", "Lamentablemente" y "Lo siento" (ve directo al dato y ofrece la alternativa). Antes de entregar tu respuesta, reléela y verifica que ninguna de estas aparece; si alguna está, reescríbela.
       - NO alucines ni inventes horarios, disponibilidad o precios. Si necesitas información del calendario o tratamientos, usa las herramientas.
       - Si encuentras horarios disponibles con 'check_availability', preséntalos en 'reply' aplicando la regla "CÓMO PRESENTAR HORARIOS DISPONIBLES" (máximo 5 opciones, agrupadas por mañana y tarde). Nunca copies la lista completa que devuelve la herramienta.
@@ -1715,15 +1716,35 @@ export function esUrgenciaDental(text: string): boolean {
     || /\b(hinch\w*|inflamad[oa]|absceso|flegmon|flemon)\b/.test(t);
 }
 
+/**
+ * Ofrecimientos que no existen.
+ *
+ * El agente ofreció "enviarte el comprobante al correo": no hay tal cosa. Es la
+ * misma familia que el "en un momento te confirmo" que ya se quitó: promesas
+ * que el paciente da por buenas y descubre incumplidas el día de su hora.
+ */
+const OFRECIMIENTOS_INEXISTENTES = [
+  /\s*¿[^?]*\b(comprobante|constancia|resumen|recordatorio|confirmaci[oó]n)\b[^?]*\b(correo|email|mail|whatsapp)\b[^?]*\?/gi,
+  /\s*¿[^?]*\b(te (env[ií]o|mando)|quieres que te (env[ií]e|mande))\b[^?]*\b(comprobante|constancia|resumen|copia)\b[^?]*\?/gi,
+  /\s*¿[^?]*\b(te llamo|te llamamos|llamarte)\b[^?]*\?/gi,
+];
+
+export function quitarOfrecimientosInexistentes(text: string): string {
+  if (!text) return text;
+  let out = text;
+  for (const re of OFRECIMIENTOS_INEXISTENTES) out = out.replace(re, '');
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function sanitizeReply(text: string): string {
   if (!text) return text;
-  return corregirDiaDeSemana(
+  return quitarOfrecimientosInexistentes(corregirDiaDeSemana(
     limpiarMarkdownNoSoportado(
       text
         .replace(/\bTe gustaría\b/g, 'Quieres')
         .replace(/\bte gustaría\b/g, 'quieres'),
     ),
-  );
+  ));
 }
 
 /**
