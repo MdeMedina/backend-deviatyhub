@@ -1,12 +1,17 @@
-import { Injectable, Inject, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { calcularHorasLibres } from '@deviaty/shared-utils';
+import { EventBus, REDIS_CHANNELS } from '@deviaty/shared-events';
 
 @Injectable()
 export class AgendaService {
+  private readonly logger = new Logger(AgendaService.name);
+
   constructor(
     @Inject(PrismaService)
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    @Inject(EventBus)
+    private readonly eventBus: EventBus
   ) {}
 
   /**
@@ -198,8 +203,8 @@ export class AgendaService {
   async updateStatus(clinicId: string, id: string, status: string, notes?: string) {
     const appointment = await this.findOneAppointment(clinicId, id);
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.appointment.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.appointment.update({
         where: { id },
         data: { status: status as any, notes: notes || appointment.notes },
       });
@@ -212,14 +217,37 @@ export class AgendaService {
         },
       });
 
-      return updated;
+      return res;
     });
+
+    // Cancelar desde el panel no avisaba a nadie: la cita desaparecía de la
+    // agenda y el paciente seguía creyendo que tenía hora. Se publica fuera de
+    // la transacción, ya con el cambio confirmado, para no avisar de algo que
+    // luego se deshaga.
+    //
+    // 'origen' importa: cuando cancela el agente es porque el paciente se lo
+    // pidió por WhatsApp, y el propio agente ya se lo confirma en el chat.
+    // Avisarle otra vez sería mandarle dos mensajes por lo mismo.
+    if (String(status).toUpperCase() === 'CANCELLED') {
+      await this.eventBus
+        .publish(REDIS_CHANNELS.APPOINTMENT_CANCELLED, {
+          appointmentId: id,
+          clinicId,
+          origen: 'PANEL',
+          motivo: notes,
+        })
+        .catch((e) =>
+          this.logger.error(`No se pudo avisar de la cancelación de ${id}: ${e.message}`),
+        );
+    }
+
+    return updated;
   }
 
   async reschedule(clinicId: string, id: string, newDate: Date, notes?: string) {
     const appointment = await this.findOneAppointment(clinicId, id);
 
-    return this.prisma.$transaction(async (tx) => {
+    const actualizada = await this.prisma.$transaction(async (tx) => {
       // Validar disponibilidad en nueva fecha (mismo doctor)
       const overlap = await tx.appointment.findFirst({
         where: {
@@ -256,5 +284,19 @@ export class AgendaService {
 
       return updated;
     });
+
+    await this.eventBus
+      .publish(REDIS_CHANNELS.APPOINTMENT_RESCHEDULED, {
+        appointmentId: id,
+        clinicId,
+        origen: 'PANEL',
+        fechaAnterior: appointment.scheduledAt,
+        fechaNueva: newDate,
+      })
+      .catch((e) =>
+        this.logger.error(`No se pudo avisar del cambio de hora de ${id}: ${e.message}`),
+      );
+
+    return actualizada;
   }
 }

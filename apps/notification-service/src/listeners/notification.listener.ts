@@ -68,6 +68,74 @@ export class NotificationListener implements OnModuleInit {
       });
     });
 
+    // ─── Cancelación y cambio de hora hechos desde el panel ────────────────
+    //
+    // Antes no se avisaba a nadie: la cita desaparecía de la agenda y el
+    // paciente seguía creyendo que tenía hora reservada. Se avisa por WhatsApp
+    // porque es el canal por el que llegó, y también por correo si lo tenemos.
+    //
+    // Solo cuando el cambio viene del panel: si lo hizo el agente es porque el
+    // paciente se lo pidió por chat y ya se lo confirmó allí.
+    const avisarCambio = (canal: string, construir: (cita: any, payload: any) => string) =>
+      this.eventBus.subscribe(canal, async (payload: any) => {
+        const { appointmentId, clinicId, origen } = payload || {};
+        if (origen !== 'PANEL') {
+          this.logger.log(`${canal} de origen ${origen || 'desconocido'}: no se avisa al paciente.`);
+          return;
+        }
+
+        const cita = await this.prisma.appointment.findUnique({
+          where: { id: appointmentId },
+          include: { contact: true, clinic: true, doctor: true, treatment: true },
+        });
+        if (!cita) {
+          this.logger.warn(`${canal}: cita ${appointmentId} no encontrada.`);
+          return;
+        }
+
+        const texto = construir(cita, payload);
+        const telefono = (cita.contact as any)?.phone;
+
+        if (telefono) {
+          await this.eventBus.publish('message.outbound', {
+            recipient: telefono,
+            content: texto,
+            conversationId: (cita as any).conversationId ?? null,
+            clinicId,
+          });
+          this.logger.log(`Aviso de ${canal} enviado por WhatsApp a ${telefono}.`);
+        } else {
+          this.logger.warn(`${canal}: la cita ${appointmentId} no tiene teléfono de contacto.`);
+        }
+      });
+
+    const cuando = (fecha: Date) =>
+      `${format(fecha, "eeee d 'de' MMMM", { locale: es })} a las ${format(fecha, 'HH:mm')}`;
+
+    await avisarCambio(REDIS_CHANNELS.APPOINTMENT_CANCELLED, (cita, payload) => {
+      const motivo = payload?.motivo ? `\n\nMotivo: ${payload.motivo}` : '';
+      return (
+        `Hola${cita.contact?.name ? ` ${cita.contact.name}` : ''}, te escribimos de ` +
+        `*${cita.clinic.name}*.\n\n` +
+        `Tu hora de *${cita.treatment?.name ?? 'atención'}* del ` +
+        `*${cuando(cita.scheduledAt)}* fue *cancelada*.${motivo}\n\n` +
+        `Si quieres tomar otra hora, respóndenos por aquí y te ayudamos.`
+      );
+    });
+
+    await avisarCambio(REDIS_CHANNELS.APPOINTMENT_RESCHEDULED, (cita, payload) => {
+      const antes = payload?.fechaAnterior ? new Date(payload.fechaAnterior) : null;
+      const cambio = antes ? `Tu hora del *${cuando(antes)}* se movió.\n\n` : '';
+      return (
+        `Hola${cita.contact?.name ? ` ${cita.contact.name}` : ''}, te escribimos de ` +
+        `*${cita.clinic.name}*.\n\n${cambio}` +
+        `Tu *${cita.treatment?.name ?? 'atención'}* queda para el ` +
+        `*${cuando(cita.scheduledAt)}*` +
+        `${cita.doctor?.name ? ` con *${cita.doctor.name}*` : ''}.\n\n` +
+        `Si no te acomoda, respóndenos por aquí y la cambiamos.`
+      );
+    });
+
     this.logger.log('Listeners registrados exitosamente.');
   }
 }

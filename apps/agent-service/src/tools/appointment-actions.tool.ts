@@ -95,6 +95,9 @@ export class AppointmentActionsTool {
     });
 
     await this.eventBus.publish(REDIS_CHANNELS.APPOINTMENT_SCHEDULED, {
+      // Lo pidió el paciente por WhatsApp y el agente ya se lo confirma en el
+      // chat: notification-service no debe mandarle un segundo aviso.
+      origen: 'AGENT',
       appointmentId: appointment.id,
       clinicId,
       conversationId: params.conversationId,
@@ -140,6 +143,9 @@ export class AppointmentActionsTool {
     });
 
     await this.eventBus.publish(REDIS_CHANNELS.APPOINTMENT_CANCELLED, {
+      // Lo pidió el paciente por WhatsApp y el agente ya se lo confirma en el
+      // chat: notification-service no debe mandarle un segundo aviso.
+      origen: 'AGENT',
       appointmentId,
       clinicId,
       conversationId: conversationId ?? appointment.conversationId ?? undefined,
@@ -212,6 +218,9 @@ export class AppointmentActionsTool {
     });
 
     await this.eventBus.publish(REDIS_CHANNELS.APPOINTMENT_RESCHEDULED, {
+      // Lo pidió el paciente por WhatsApp y el agente ya se lo confirma en el
+      // chat: notification-service no debe mandarle un segundo aviso.
+      origen: 'AGENT',
       appointmentId,
       clinicId,
       conversationId: conversationId ?? appointment.conversationId ?? undefined,
