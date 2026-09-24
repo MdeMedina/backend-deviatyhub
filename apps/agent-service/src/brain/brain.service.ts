@@ -1124,9 +1124,24 @@ export class BrainService {
       //    respuesta y devolviendo al paciente al flujo de reserva nueva. Uno
       //    que pidió cambiar su hora acabó dando otra vez su nombre y su correo,
       //    y el cambio nunca llegó a hacerse.
-      const cambioEjecutado = toolsUsed.some((t) =>
-        ['reschedule_appointment', 'cancel_appointment', 'schedule_appointment'].includes(t),
-      );
+      //    Ojo con el matiz: vale que la herramienta se ejecutara CON ÉXITO, no
+      //    que se invocara. Comprobar solo la invocación deja pasar el caso
+      //    peor: la herramienta responde que la hora ya está ocupada y el
+      //    modelo anuncia igualmente "he reprogramado tu hora". El paciente se
+      //    va creyendo que la cambió y aparece el día que no es.
+      const HERRAMIENTAS_QUE_CAMBIAN = [
+        'reschedule_appointment',
+        'cancel_appointment',
+        'schedule_appointment',
+      ];
+      const pasos: any[] = Array.isArray((response as any).intermediateSteps)
+        ? (response as any).intermediateSteps
+        : [];
+      const cambioEjecutado = pasos.some((paso) => {
+        if (!HERRAMIENTAS_QUE_CAMBIAN.includes(paso?.action?.tool)) return false;
+        const salida = String(paso?.observation ?? '');
+        return !/^\s*(no se pudo|error|\[simulado\])/i.test(salida);
+      });
 
       if (finalStep !== 'concluido' && !cambioEjecutado && claimsBookingDone(replyText)) {
         this.logger.error(
