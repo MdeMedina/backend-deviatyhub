@@ -1075,11 +1075,29 @@ export class BrainService {
       //    existe. El prompt ya lo prohíbe, pero una prohibición en el prompt es
       //    probabilística y aquí el coste de fallar es que el paciente se quede
       //    creyendo que tiene una hora que nadie reservó.
-      if (finalStep !== 'concluido' && claimsBookingDone(replyText)) {
+      //    PERO reprogramar y cancelar NO pasan por 'listo_para_ejecucion': van
+      //    por sus herramientas. Sin esta salvedad el paso real nunca llegaba a
+      //    'concluido' en esos casos y la guarda saltaba SIEMPRE, borrando la
+      //    respuesta y devolviendo al paciente al flujo de reserva nueva. Uno
+      //    que pidió cambiar su hora acabó dando otra vez su nombre y su correo,
+      //    y el cambio nunca llegó a hacerse.
+      const cambioEjecutado = toolsUsed.some((t) =>
+        ['reschedule_appointment', 'cancel_appointment', 'schedule_appointment'].includes(t),
+      );
+
+      if (finalStep !== 'concluido' && !cambioEjecutado && claimsBookingDone(replyText)) {
         this.logger.error(
           `El modelo anunció una cita no agendada (paso real: ${finalStep}). Respuesta sustituida.`,
         );
-        replyText = buildMissingDataReply(currentBooking);
+        // A quien viene a cambiar o anular su hora, "me falta la fecha para
+        // dejar la reserva" no le dice nada: no está reservando.
+        const gestionaCitaExistente =
+          classification.intent === Intent.REAGENDAR_CITA ||
+          classification.intent === Intent.CANCELAR_CITA;
+
+        replyText = gestionaCitaExistente
+          ? 'Todavía no pude aplicar el cambio en tu hora.\n\nDime qué día y hora prefieres y lo dejo listo.'
+          : buildMissingDataReply(currentBooking);
       }
     }
 
@@ -1560,6 +1578,13 @@ export function limpiarMarkdownNoSoportado(text: string): string {
   if (!text) return text;
   return (
     text
+      // Saltos de línea escapados. El modelo redacta dentro de un JSON y a
+      // veces deja los dos caracteres de la secuencia en el texto en lugar de
+      // un salto real, y al paciente le llegan literales:
+      //   "...a las *12:30*.\\n\\n¿Confirmas..."
+      .replace(/\\r\\n/g, '\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, ' ')
       // **negrita** -> *negrita*, que es la de WhatsApp. Se hace antes que nada
       // para no romperla al tocar los asteriscos sueltos.
       .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
