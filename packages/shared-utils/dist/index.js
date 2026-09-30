@@ -20,4 +20,5 @@ __exportStar(require("./date.util"), exports);
 __exportStar(require("./response.util"), exports);
 __exportStar(require("./validate.util"), exports);
 __exportStar(require("./availability.util"), exports);
+__exportStar(require("./paciente.util"), exports);
 //# sourceMappingURL=index.js.map

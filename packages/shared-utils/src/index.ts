@@ -4,3 +4,4 @@ export * from './date.util';
 export * from './response.util';
 export * from './validate.util';
 export * from './availability.util';
+export * from './paciente.util';

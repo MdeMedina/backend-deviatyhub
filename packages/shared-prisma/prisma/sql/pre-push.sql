@@ -17,3 +17,9 @@
 -- (<tabla>_<columna>_key); con otro nombre, db push intentaría crear el suyo.
 ALTER TABLE doctors ADD COLUMN IF NOT EXISTS user_id uuid;
 CREATE UNIQUE INDEX IF NOT EXISTS doctors_user_id_key ON doctors (user_id);
+
+-- Referencia corta de la cita. Igual que con doctors.user_id, prisma trata el
+-- alta de un UNIQUE como potencialmente destructiva aunque la columna sea nueva
+-- y no pueda tener duplicados, así que se crea aquí.
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS code text;
+CREATE UNIQUE INDEX IF NOT EXISTS appointments_code_key ON appointments (code);

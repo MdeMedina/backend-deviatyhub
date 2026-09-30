@@ -364,6 +364,10 @@ model DoctorAbsence {
   @@map("doctor_absences")
 }
 
+/// Pregunta que el agente hace antes de reservar ese tratamiento, y su
+/// respuesta en la cita. Nace de la endodoncia, que cambia según la pieza, pero
+/// se deja configurable en vez de escribir "Endodoncia" en el código: mañana la
+/// clínica querrá preguntar otra cosa en otro tratamiento.
 model Treatment {
   id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   clinicId        String    @map("clinic_id") @db.Uuid
@@ -380,6 +384,9 @@ model Treatment {
   priceFonasa     Int?      @map("price_fonasa")
   acceptsIsapre   Boolean?  @default(false) @map("accepts_isapre")
   acceptsFonasa   Boolean?  @default(false) @map("accepts_fonasa")
+  /// Pregunta que el agente debe hacer antes de reservar este tratamiento, por
+  /// ejemplo "¿de qué diente?" en una endodoncia. Vacío = no pregunta nada.
+  extraQuestion   String?   @map("extra_question")
   createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -438,6 +445,11 @@ model Appointment {
   source         AppointmentSource @default(AGENT)
   externalId     String?           @map("external_id")
   notes          String?
+  /// Referencia corta que se le da al paciente ("D4K7QP"). El UUID no sirve
+  /// para eso: nadie lo dicta por WhatsApp ni lo reconoce al leerlo.
+  code           String?           @unique
+  /// Respuesta a la pregunta del tratamiento, p. ej. la pieza en una endodoncia.
+  extraAnswer    String?           @map("extra_answer")
   reminder3dSent Boolean?          @default(false) @map("reminder_3d_sent")
   reminder1dSent Boolean?          @default(false) @map("reminder_1d_sent")
   reminder1hSent Boolean?          @default(false) @map("reminder_1h_sent")
@@ -479,7 +491,14 @@ model ClinicContact {
   phone             String?
   email             String?
   instagramUser     String?   @map("instagram_user")
+  /// Nombre de pila. Se mantiene el campo histórico: hasta ahora guardaba el
+  /// nombre completo y hay datos con ese formato.
   name              String?
+  lastName          String?   @map("last_name")
+  /// RUT normalizado a "12345678-9": sin puntos y con el dígito en mayúscula,
+  /// para que el mismo paciente no entre dos veces por escribirlo distinto.
+  rut               String?
+  address           String?
   lastInteractionAt DateTime? @map("last_interaction_at") @db.Timestamptz
   createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
