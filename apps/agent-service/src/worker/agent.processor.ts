@@ -5,6 +5,59 @@ import { PrismaService } from '@deviaty/shared-prisma';
 import { BrainService } from '../brain/brain.service';
 import { EventBus } from '@deviaty/shared-events';
 
+/**
+ * Corta-bucles.
+ *
+ * El 29/09 el agente pasó 3,5 horas contestando al bot de ofertas de otra
+ * empresa: cada respuesta nuestra disparaba su mensaje automático y viceversa.
+ * 864 respuestas, el mismo texto del otro lado 682 veces. Cada vuelta, una
+ * llamada al modelo con ~8.000 tokens de prompt y un envío por WhatsApp, que es
+ * el patrón por el que Meta marca un número como spam.
+ *
+ * Se decide sin el modelo, con dos señales que un paciente real no produce:
+ *
+ * - El MISMO mensaje largo repetido. Un bot repite su texto automático; una
+ *   persona no escribe tres veces idéntico un párrafo. Los cortos se excluyen a
+ *   propósito: "si", "ok" o "gracias" se repiten de forma natural en una
+ *   reserva, y cortarlos dejaría a pacientes de verdad sin respuesta.
+ * - Demasiadas respuestas nuestras en una hora. Una reserva completa son unos
+ *   quince turnos; cuarenta en una hora no es una conversación.
+ */
+export const BUCLE = {
+  minLargoRepetido: 25,
+  repeticionesMax: 3,
+  ventanaRepeticionMin: 15,
+  respuestasMaxPorHora: 40,
+};
+
+export function normalizarParaBucle(texto: string): string {
+  return String(texto || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function motivoDeBucle(
+  entrantesRecientes: string[],
+  textoActual: string,
+  respuestasUltimaHora: number,
+): string | null {
+  const actual = normalizarParaBucle(textoActual);
+
+  if (actual.length >= BUCLE.minLargoRepetido) {
+    const iguales = entrantesRecientes.filter((t) => normalizarParaBucle(t) === actual).length;
+    if (iguales >= BUCLE.repeticionesMax) {
+      return `el mismo mensaje llegó ${iguales} veces en ${BUCLE.ventanaRepeticionMin} minutos`;
+    }
+  }
+
+  if (respuestasUltimaHora >= BUCLE.respuestasMaxPorHora) {
+    return `ya se enviaron ${respuestasUltimaHora} respuestas en la última hora`;
+  }
+
+  return null;
+}
+
 @Injectable()
 @Processor('messages')
 export class AgentProcessor extends WorkerHost {
@@ -80,6 +133,53 @@ export class AgentProcessor extends WorkerHost {
         this.logger.warn(
           `Agente en PAUSA para la clínica ${clinic_id}. No se responde a ${conversation_id}.`,
         );
+        return;
+      }
+
+      // 1.c Corta-bucles, ANTES del modelo: un bucle no debe costar ni una
+      //     llamada más. Si salta, la conversación pasa a una persona y el
+      //     agente deja de contestar; el aviso queda en el hilo para que el
+      //     equipo vea por qué.
+      const textoEntrante = String(message.text || message.body || '');
+      const desde15 = new Date(Date.now() - BUCLE.ventanaRepeticionMin * 60 * 1000);
+      const desde60 = new Date(Date.now() - 60 * 60 * 1000);
+
+      const [entrantes, respuestasHora] = await Promise.all([
+        this.prisma.message.findMany({
+          where: { conversationId: conversation_id, role: 'USER', sentAt: { gte: desde15 } },
+          select: { content: true },
+        }),
+        this.prisma.message.count({
+          where: { conversationId: conversation_id, role: 'ASSISTANT', sentAt: { gte: desde60 } },
+        }),
+      ]);
+
+      const motivo = motivoDeBucle(
+        entrantes.map((m) => m.content),
+        textoEntrante,
+        respuestasHora,
+      );
+
+      if (motivo) {
+        this.logger.error(
+          `🛑 Corta-bucles en ${conversation_id}: ${motivo}. Se deja de responder y se pasa a una persona.`,
+        );
+        await this.prisma.conversation.update({
+          where: { id: conversation_id },
+          data: { status: 'HUMAN_TAKEOVER' },
+        });
+        const aviso = await this.prisma.message.create({
+          data: {
+            conversationId: conversation_id,
+            clinicId: clinic_id,
+            role: 'SYSTEM',
+            content:
+              `El agente dejó de responder automáticamente: ${motivo}. ` +
+              `Suele indicar que al otro lado hay otro bot. Revisa la conversación y, si es un paciente, libérala.`,
+            sentAt: new Date(),
+          },
+        });
+        await this.notifyMessage(conversation_id, aviso);
         return;
       }
 
