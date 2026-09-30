@@ -49,6 +49,10 @@ export class StateManager {
       booking.hora &&
       booking.Nombre &&
       booking.Apellido &&
+      // RUT y dirección son obligatorios para la ficha clínica: sin ellos la
+      // cita queda incompleta y hay que perseguir al paciente después.
+      booking.rut &&
+      booking.direccion &&
       booking.correo;
 
     const pasoConocido: ConversationStep[] = [
@@ -114,12 +118,14 @@ export class StateManager {
 
       case 'esperando_horario':
         if (booking.hora) {
-          nextStep = (booking.Nombre && booking.Apellido && booking.correo) ? 'listo_para_ejecucion' : 'esperando_datos_personales';
+          nextStep = (booking.Nombre && booking.Apellido && booking.rut && booking.direccion && booking.correo)
+            ? 'listo_para_ejecucion'
+            : 'esperando_datos_personales';
         }
         break;
 
       case 'esperando_datos_personales':
-        if (booking.Nombre && booking.Apellido && booking.correo) {
+        if (booking.Nombre && booking.Apellido && booking.rut && booking.direccion && booking.correo) {
           nextStep = 'listo_para_ejecucion';
         }
         break;

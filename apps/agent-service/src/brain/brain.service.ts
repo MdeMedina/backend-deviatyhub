@@ -6,7 +6,7 @@ import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
-import { explicarSinHoras } from '@deviaty/shared-utils';
+import { explicarSinHoras, normalizarRut } from '@deviaty/shared-utils';
 import { IntentionClassifier, Intent } from './intention.classifier';
 import { StateManager, ConversationStep } from './state.manager';
 import { AvailabilityTool } from '../tools/availability.tool';
@@ -115,6 +115,9 @@ export class BrainService {
       correo?: string;
       cita_id?: string;
       doctor_id?: string;
+      rut?: string;
+      direccion?: string;
+      respuesta_tratamiento?: string;
     };
 
     // Citas futuras de este paciente, ya resueltas.
@@ -164,6 +167,9 @@ export class BrainService {
 - Nombre paciente (Nombre): ${bookingState.Nombre || 'vacío'}
 - Apellido paciente (Apellido): ${bookingState.Apellido || 'vacío'}
 - Correo electrónico (correo): ${bookingState.correo || 'vacío'}
+- RUT (rut): ${bookingState.rut || 'vacío'}
+- Dirección (direccion): ${bookingState.direccion || 'vacío'}
+- Respuesta a la pregunta del tratamiento (respuesta_tratamiento): ${bookingState.respuesta_tratamiento || 'vacío'}
 - Especialista elegido (doctor_id): ${bookingState.doctor_id || 'vacío (lo asigna el sistema)'}`;
 
     // 1. Clasificar Intención. Se le pasa el último mensaje del agente y el paso
@@ -599,7 +605,14 @@ export class BrainService {
               ? ` Lo atienden: ${quienes.join(' · ')}`
               : ' Sin especialista asignado: no lo ofrezcas para agendar.';
 
-            return `- [ID: ${t.id}] ${t.name}${duration}. Precios: ${priceList}.${atiende}`;
+            // Pregunta propia del tratamiento (la pieza en una endodoncia, por
+            // ejemplo). Va junto al tratamiento para que el agente la vea en el
+            // momento de elegirlo, no en un bloque aparte que puede llegar tarde.
+            const extra = (t as any).extraQuestion
+              ? ` ANTES DE RESERVARLO PREGUNTA: "${(t as any).extraQuestion}" y guarda la respuesta en "respuesta_tratamiento".`
+              : '';
+
+            return `- [ID: ${t.id}] ${t.name}${duration}. Precios: ${priceList}.${atiende}${extra}`;
           })
           .join('\n')
       : 'No hay tratamientos disponibles actualmente.';
@@ -816,7 +829,12 @@ export class BrainService {
          - Si hay VARIOS: pregúntale con cuál prefiere ANTES de hablar de días y horas, ofreciendo solo a esos, y guarda su UUID en "doctor_id". Si te dice que le da igual, deja "doctor_id" vacío y sigue.
       3. Fecha: campo "fecha", formato DD/MM/YYYY.
       4. Hora: campo "hora", formato HH:MM.
-      5. Nombre, Apellido y correo del paciente.
+      5. Nombre y Apellido del paciente.
+      6. RUT: campo "rut". Pídelo tal cual, con su dígito verificador. Lo valida el sistema; tú no intentes comprobarlo.
+      7. Dirección: campo "direccion".
+      8. Correo: campo "correo".
+      - Pide los datos personales de UNO EN UNO, no los cinco de golpe. Un paciente al que le sueltan "dame nombre, apellido, RUT, dirección y correo" responde a medias y hay que perseguir el resto.
+      - Si el paciente te da varios a la vez, guárdalos todos y pide solo lo que siga faltando.
       - ESTA LISTA SOLO APLICA A UNA HORA NUEVA. Si el paciente quiere cambiar o anular una de las que ya tiene (mira el bloque de HORAS RESERVADAS), NO recorras esta lista: no necesitas tratamiento, ni nombre, ni correo, porque esa hora ya los tiene. Pedírselos otra vez le hace repetir lo que ya dio y el cambio no llega a hacerse.
       - Mira el ESTADO DE AGENDAMIENTO PERSISTIDO y pide SOLO el primer dato que falte, uno por mensaje.
       - Antes de pedir cualquier dato, repasa TODO el historial de la conversación: si el paciente ya lo dijo en algún mensaje anterior, rellénalo en el JSON y no lo vuelvas a preguntar.
@@ -915,6 +933,9 @@ export class BrainService {
           .filter((t: any): t is string => typeof t === 'string')
       : [];
 
+    // Se declara aquí porque el rechazo ocurre al fusionar el booking y se usa
+    // más abajo, al redactar la respuesta.
+    let rutRechazado = false;
     let replyText = response.output;
     let nextStepText = params.currentStep;
     let parsedJson: any = null;
@@ -939,7 +960,25 @@ export class BrainService {
         // Solo se usa cuando el paciente elige especialista; si va vacío, el
         // sistema lo asigna por disponibilidad.
         doctor_id: parsedJson.doctor_id || existingMetadata.booking?.doctor_id || '',
+        rut: parsedJson.rut || existingMetadata.booking?.rut || '',
+        direccion: parsedJson.direccion || existingMetadata.booking?.direccion || '',
+        respuesta_tratamiento:
+          parsedJson.respuesta_tratamiento || existingMetadata.booking?.respuesta_tratamiento || '',
       };
+
+      // El RUT se valida aquí, no en el prompt: el dígito verificador es
+      // aritmética. Un RUT inventado en la ficha clínica es de los datos que
+      // más caro salen, y el modelo no puede comprobarlo por su cuenta.
+      if (updatedBooking.rut) {
+        const normalizado = normalizarRut(updatedBooking.rut);
+        if (normalizado) {
+          updatedBooking.rut = normalizado;
+        } else {
+          this.logger.warn(`RUT descartado por inválido: "${updatedBooking.rut}".`);
+          updatedBooking.rut = '';
+          rutRechazado = true;
+        }
+      }
       
       // El apellido que el paciente escribió y el modelo se dejó.
       if (updatedBooking.Nombre && !updatedBooking.Apellido) {
@@ -1140,6 +1179,15 @@ export class BrainService {
           );
           replyText = buildMissingDataReply(currentBooking);
         }
+      }
+
+      // Un RUT que no pasa la validación no puede quedarse en silencio: el
+      // modelo lo dio por bueno y seguiría adelante, y el paciente se enteraría
+      // en la clínica. Se le pide de nuevo indicando qué pasó.
+      if (rutRechazado) {
+        replyText =
+          'Ese RUT no me cuadra, creo que hay un dígito cambiado.\n\n' +
+          '¿Me lo escribes de nuevo con el dígito verificador? Por ejemplo: 12345678-9';
       }
 
       // 8. Guardarraíl: el modelo no puede dar por hecha una reserva que el
@@ -1505,6 +1553,17 @@ export class BrainService {
       if (suyas.length === 1) citaQueSeMueve = suyas[0].id;
     }
 
+    // Si el tratamiento tiene pregunta propia, no se reserva sin respuesta: la
+    // endodoncia de un molar no es la de un incisivo, y el doctor necesita
+    // saberlo antes de que el paciente se siente en el sillón.
+    if ((treatment as any).extraQuestion && !booking?.respuesta_tratamiento) {
+      return {
+        success: false,
+        reply: `${(treatment as any).extraQuestion}`,
+        retryStep: 'esperando_datos_personales',
+      };
+    }
+
     const seleccion = await this.selectDoctor(
       clinicId,
       treatment,
@@ -1537,6 +1596,7 @@ export class BrainService {
       scheduledAt,
       durationMin,
       contactName,
+      extraAnswer: booking?.respuesta_tratamiento || null,
     });
 
     if (!res.success) {
@@ -1557,6 +1617,9 @@ export class BrainService {
       reply:
         `¡Listo! Tu hora de *${treatment.name}* quedó agendada para el ` +
         `*${formatFechaHumana(scheduledAt)}* a las *${booking.hora}*${conEspecialista}.` +
+        ((res as any)?.appointment?.code
+          ? `\n\nTu número de reserva es *${(res as any).appointment.code}*.`
+          : '') +
         `\n\nSi necesitas cambiarla o cancelarla, avísame.`,
     };
   }
@@ -1920,6 +1983,12 @@ export function buildMissingDataReply(booking: any): string {
   }
   if (!b.Nombre || !b.Apellido) {
     return 'Me falta tu nombre completo para dejar la reserva.\n\n¿Me lo das?';
+  }
+  if (!b.rut) {
+    return 'Me falta tu RUT para la ficha.\n\n¿Me lo das con el dígito verificador?';
+  }
+  if (!b.direccion) {
+    return 'Me falta tu dirección para la ficha.\n\n¿Cuál es?';
   }
   if (!b.correo) {
     return 'Solo me falta tu correo para dejar la reserva.\n\n¿Me lo compartes?';

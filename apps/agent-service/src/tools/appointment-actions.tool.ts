@@ -1,5 +1,6 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '@deviaty/shared-prisma';
+import { generarCodigoCita } from '@deviaty/shared-utils';
 import { EventBus, REDIS_CHANNELS } from '@deviaty/shared-events';
 
 @Injectable()
@@ -38,6 +39,21 @@ export class AppointmentActionsTool {
    * Agenda una nueva cita (equivalente al Flujo 2 de n8n a nivel de BDD).
    * Solo debe invocarse cuando la máquina de estados llega a `listo_para_ejecucion`.
    */
+  /**
+   * Referencia corta y libre. El índice es único, así que una colisión no
+   * corrompe nada: reventaría la reserva. Con 28^6 combinaciones es improbable,
+   * pero unos pocos intentos cuestan nada y evitan perder una cita por azar.
+   */
+  private async codigoLibre(tx: any): Promise<string> {
+    for (let i = 0; i < 5; i++) {
+      const candidato = generarCodigoCita();
+      const existe = await tx.appointment.findFirst({ where: { code: candidato }, select: { id: true } });
+      if (!existe) return candidato;
+    }
+    // Agotados los intentos, mejor una cita sin referencia que ninguna cita.
+    return '';
+  }
+
   async scheduleAppointment(
     clinicId: string,
     params: {
@@ -48,6 +64,8 @@ export class AppointmentActionsTool {
       scheduledAt: Date;
       durationMin: number;
       contactName?: string | null;
+      /** Respuesta a la pregunta del tratamiento, p. ej. la pieza en una endodoncia. */
+      extraAnswer?: string | null;
     },
   ): Promise<{ success: boolean; message?: string; appointment?: any }> {
     this.logger.log(
@@ -80,6 +98,8 @@ export class AppointmentActionsTool {
           durationMin: params.durationMin,
           status: 'CONFIRMED',
           source: 'AGENT',
+          code: await this.codigoLibre(tx),
+          extraAnswer: params.extraAnswer ?? null,
         },
       });
 
