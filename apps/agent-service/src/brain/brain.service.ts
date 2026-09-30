@@ -1597,6 +1597,13 @@ export class BrainService {
       durationMin,
       contactName,
       extraAnswer: booking?.respuesta_tratamiento || null,
+      paciente: {
+        nombre: booking?.Nombre || null,
+        apellido: booking?.Apellido || null,
+        rut: booking?.rut || null,
+        direccion: booking?.direccion || null,
+        correo: booking?.correo || null,
+      },
     });
 
     if (!res.success) {

@@ -66,6 +66,19 @@ export class AppointmentActionsTool {
       contactName?: string | null;
       /** Respuesta a la pregunta del tratamiento, p. ej. la pieza en una endodoncia. */
       extraAnswer?: string | null;
+      /**
+       * Datos del paciente para su ficha. Se recogen durante la conversación y
+       * hay que guardarlos aquí: viven en el estado temporal de la reserva, que
+       * se vacía justo al completarla, así que sin esto el RUT y la dirección
+       * se perderían después de habérselos pedido.
+       */
+      paciente?: {
+        nombre?: string | null;
+        apellido?: string | null;
+        rut?: string | null;
+        direccion?: string | null;
+        correo?: string | null;
+      };
     },
   ): Promise<{ success: boolean; message?: string; appointment?: any }> {
     this.logger.log(
@@ -107,9 +120,26 @@ export class AppointmentActionsTool {
         data: {
           appointmentId: appt.id,
           event: 'created',
-          payload: { by: 'agent' },
+          payload: { by: 'agent', at: new Date().toISOString() },
         },
       });
+
+      // Ficha del paciente, en la misma transacción que la cita: o quedan las
+      // dos cosas o ninguna. Solo se escribe lo que llegó con valor, para no
+      // borrar con vacíos lo que ya hubiera de una visita anterior.
+      const p = params.paciente;
+      if (params.contactId && p) {
+        const datos: Record<string, string> = {};
+        if (p.nombre) datos.name = p.nombre;
+        if (p.apellido) datos.lastName = p.apellido;
+        if (p.rut) datos.rut = p.rut;
+        if (p.direccion) datos.address = p.direccion;
+        if (p.correo) datos.email = p.correo;
+
+        if (Object.keys(datos).length) {
+          await tx.clinicContact.update({ where: { id: params.contactId }, data: datos });
+        }
+      }
 
       return appt;
     });
