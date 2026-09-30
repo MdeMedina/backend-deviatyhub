@@ -291,6 +291,8 @@ export class BrainService {
                 tratamientoEfectivo,
                 doctorEfectivo,
                 candidatos,
+                undefined,
+                citaQueSeMueve,
               );
 
               const conOtros = alternativas
@@ -326,6 +328,7 @@ export class BrainService {
                 doctorEfectivo,
                 candidatos,
                 pedida,
+                citaQueSeMueve,
               );
               const alternativa = otros ? ` A las ${pedida} sí está libre: ${otros}.` : '';
               return (
@@ -1245,6 +1248,14 @@ export class BrainService {
     treatment: any,
     scheduledAt: Date,
     booking: any,
+    /**
+     * Cita que el paciente está moviendo: su hora actual no cuenta como
+     * ocupada. Se añadió a check_availability pero faltaba aquí, y estas son
+     * las frases que de verdad lee el paciente: un caso real acabó con "no
+     * tiene libre las 14:00" justo después de mover su hora a las 14:00, y la
+     * lista de alternativas cambiando en cada vuelta.
+     */
+    excluirCitaId?: string,
   ): Promise<{ doctorId?: string; doctorName?: string; reply?: string }> {
     const hora = String(booking?.hora || '').trim();
 
@@ -1264,6 +1275,7 @@ export class BrainService {
         scheduledAt,
         treatment.id,
         doctorId,
+        excluirCitaId,
       );
       return slots.includes(hora);
     };
@@ -1290,6 +1302,7 @@ export class BrainService {
           scheduledAt,
           treatment.id,
           elegido.id,
+          excluirCitaId,
         );
 
         const conOtro = otrosLibres.length
@@ -1380,6 +1393,7 @@ export class BrainService {
     doctorElegido: string | undefined,
     candidatos: { id: string; name: string }[],
     horaConcreta?: string,
+    excluirCitaId?: string,
   ): Promise<string | null> {
     const otros = candidatos.filter((d) => d.id !== doctorElegido);
     if (!otros.length) return null;
@@ -1387,7 +1401,13 @@ export class BrainService {
     const partes: string[] = [];
     for (const d of otros) {
       try {
-        const libres = await this.availabilityTool.getAvailableSlots(clinicId, fecha, treatmentId, d.id);
+        const libres = await this.availabilityTool.getAvailableSlots(
+          clinicId,
+          fecha,
+          treatmentId,
+          d.id,
+          excluirCitaId,
+        );
         if (!libres.length) continue;
 
         if (horaConcreta) {
@@ -1462,7 +1482,36 @@ export class BrainService {
       };
     }
 
-    const seleccion = await this.selectDoctor(clinicId, treatment, scheduledAt, booking);
+    // Qué cita no debe contar como ocupada.
+    //
+    // Cuando el paciente pide mover su hora, el agente no siempre toma el
+    // camino de reprogramar: a veces intenta reservar de nuevo, y entonces su
+    // propia cita bloquea el hueco al que quiere ir. Un paciente real acabó
+    // oyendo "no tiene libre las 14:00" justo tras pedir las 14:00, con la
+    // lista de alternativas cambiando en cada vuelta. Si cita_id no viene y
+    // solo tiene una hora futura, esa es.
+    let citaQueSeMueve: string | undefined = booking?.cita_id || undefined;
+    if (!citaQueSeMueve && contact?.id) {
+      const suyas = await this.prisma.appointment.findMany({
+        where: {
+          clinicId,
+          contactId: contact.id,
+          status: { notIn: ['CANCELLED', 'COMPLETED'] },
+          scheduledAt: { gte: new Date() },
+        },
+        select: { id: true },
+        take: 2,
+      });
+      if (suyas.length === 1) citaQueSeMueve = suyas[0].id;
+    }
+
+    const seleccion = await this.selectDoctor(
+      clinicId,
+      treatment,
+      scheduledAt,
+      booking,
+      citaQueSeMueve,
+    );
     if (!seleccion.doctorId) {
       // El especialista o la hora no sirven. Se olvidan ambos para que la
       // respuesta del paciente ("otra hora", "otro especialista") pueda cambiar
