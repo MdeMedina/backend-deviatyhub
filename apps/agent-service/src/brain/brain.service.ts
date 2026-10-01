@@ -118,6 +118,8 @@ export class BrainService {
       rut?: string;
       direccion?: string;
       respuesta_tratamiento?: string;
+      /** El paciente dijo que le da igual el especialista. */
+      doctor_sin_preferencia?: boolean;
     };
 
     // Citas futuras de este paciente, ya resueltas.
@@ -626,8 +628,23 @@ export class BrainService {
       bookingState.procedimiento_id,
     );
 
+    // "Con el que tenga hora antes", "me da igual": el paciente ya contestó, y
+    // contestó que no elige. Antes eso no quedaba en ninguna parte: el doctor
+    // seguía vacío, el paso seguía en 'esperando_doctor' y el agente le
+    // preguntaba lo mismo dos veces más, la última ya con la hora elegida.
+    // Se decide aquí y no en el prompt por lo mismo de siempre: el modelo sigue
+    // el paso del flujo antes que una instrucción de texto.
+    const hablandoDeEspecialista =
+      params.currentStep === 'esperando_doctor' ||
+      preguntaPorEspecialista(String(lastAgentMessage || '')) ||
+      mencionaEspecialista(params.userInput);
+    const pacienteSinPreferencia =
+      Boolean(bookingState.doctor_sin_preferencia) ||
+      (hablandoDeEspecialista && sinPreferenciaDeEspecialista(params.userInput));
+
     // Solo se pregunta cuando de verdad hay algo que elegir.
-    const requiereEleccionDoctor = doctoresDelTratamiento.length > 1 && !bookingState.doctor_id;
+    const requiereEleccionDoctor =
+      doctoresDelTratamiento.length > 1 && !bookingState.doctor_id && !pacienteSinPreferencia;
 
     const especialistasBlock = bookingState.procedimiento_id
       ? doctoresDelTratamiento.length === 0
@@ -639,7 +656,9 @@ export class BrainService {
               .join('\n')}\n` +
             (bookingState.doctor_id
               ? 'El paciente ya eligió; respeta esa elección y no vuelvas a preguntar.'
-              : 'Pregúntale con cuál prefiere atenderse ANTES de hablar de días y horas, porque las horas libres son las de ese profesional, no las de la clínica. Si no tiene preferencia, deja "doctor_id" vacío y sigue con la fecha. Guarda el UUID del que elija en "doctor_id".')
+              : pacienteSinPreferencia
+                ? 'El paciente NO tiene preferencia de especialista. No le preguntes con quién ni le hagas elegir entre ellos: llama a check_availability sin doctor_id, ofrécele las horas libres sin nombrar profesional, y el sistema le asigna uno que esté libre a la hora que elija. Deja "doctor_id" vacío.'
+                : 'Pregúntale con cuál prefiere atenderse ANTES de hablar de días y horas, porque las horas libres son las de ese profesional, no las de la clínica. Si no tiene preferencia, deja "doctor_id" vacío y sigue con la fecha. Guarda el UUID del que elija en "doctor_id".')
       : '';
 
     // Formatear políticas de la clínica
@@ -857,6 +876,7 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
     // Se declara aquí porque el rechazo ocurre al fusionar el booking y se usa
     // más abajo, al redactar la respuesta.
     let rutRechazado = false;
+    let apellidoRecuperado = false;
     let replyText = response.output;
     let nextStepText = params.currentStep;
     let parsedJson: any = null;
@@ -885,6 +905,9 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
         direccion: parsedJson.direccion || existingMetadata.booking?.direccion || '',
         respuesta_tratamiento:
           parsedJson.respuesta_tratamiento || existingMetadata.booking?.respuesta_tratamiento || '',
+        // El paciente dijo que le da igual con quién. Lo decide el sistema, no
+        // el modelo, así que no viaja en el JSON de respuesta.
+        doctor_sin_preferencia: pacienteSinPreferencia,
       };
 
       // El RUT se valida aquí, no en el prompt: el dígito verificador es
@@ -916,6 +939,7 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
           );
           updatedBooking.Nombre = String(updatedBooking.Nombre).split(/\s+/)[0];
           updatedBooking.Apellido = apellido;
+          apellidoRecuperado = true;
         }
       }
 
@@ -1100,6 +1124,29 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
           );
           replyText = buildMissingDataReply(currentBooking);
         }
+      }
+
+      // 7.d Sin preferencia de especialista y el modelo pregunta igual con cuál.
+      //     El paciente ya respondió a eso; volver a preguntarlo es lo que le
+      //     hace sentir que no se le escucha.
+      if (
+        finalStep !== 'concluido' &&
+        currentBooking.doctor_sin_preferencia &&
+        !currentBooking.doctor_id &&
+        especialistasDelElegido.length > 1 &&
+        preguntaPorEspecialista(replyText)
+      ) {
+        this.logger.log('Pregunta por especialista suprimida: el paciente dijo que no tiene preferencia.');
+        replyText = respuestaSinElegirEspecialista(currentBooking);
+      }
+
+      // 7.e El apellido se recuperó de lo que escribió el paciente, pero la
+      //     respuesta del modelo se escribió antes y se lo vuelve a pedir:
+      //     "Camila Rojas" → "Gracias, Camila. ¿Me das tu apellido?". El estado
+      //     quedaba bien y el paciente igual tenía que repetirlo.
+      if (finalStep !== 'concluido' && apellidoRecuperado && pideApellido(replyText)) {
+        this.logger.log('Pregunta por el apellido suprimida: ya venía en el mensaje del paciente.');
+        replyText = siguienteDatoPersonal(currentBooking);
       }
 
       // Un RUT que no pasa la validación no puede quedarse en silencio: el
@@ -1308,7 +1355,10 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
         reply: `Las *${hora}* ya no están disponibles para ${treatment.name}. ¿Quieres que busque otra hora?`,
       };
     }
-    if (libres.length === 1) {
+    // Uno solo libre, o al paciente le da igual: se asigna sin preguntar. Con la
+    // pregunta, quien dijo "con el que tenga hora antes" la recibía por tercera
+    // vez, ya con todos sus datos entregados.
+    if (libres.length === 1 || booking?.doctor_sin_preferencia) {
       return { doctorId: libres[0].id, doctorName: libres[0].name };
     }
 
@@ -1887,6 +1937,60 @@ export function preguntaPorEspecialista(text: string): boolean {
     /\b(especialistas?|profesionales?|doctora?s?|dentista)\b[\s\S]{0,40}\b(prefieres|prefiere|eliges|escoges|quieres atenderte)\b/.test(t) ||
     /\b(prefieres|prefiere|eliges|escoges)\b[\s\S]{0,40}\b(especialistas?|profesionales?|doctora?s?|dentista)\b/.test(t)
   );
+}
+
+function sinAcentos(texto: string): string {
+  return String(texto || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+/** El mensaje habla de quién atiende: "con quién", "doctor", "la dra", "especialista". */
+export function mencionaEspecialista(texto: string): boolean {
+  return /\b(con quien|doctora?s?|dra?\.?|especialistas?|profesionales?|dentistas?)\b/.test(sinAcentos(texto));
+}
+
+/**
+ * "Me da igual", "con el que tenga hora antes", "cualquiera". Solo se mira
+ * cuando la conversación está en la elección de especialista, porque fuera de
+ * ahí "me da igual" puede referirse a la hora o al día.
+ */
+export function sinPreferenciaDeEspecialista(texto: string): boolean {
+  const t = sinAcentos(texto);
+  if (/\bno me da (igual|lo mismo)\b/.test(t)) return false;
+  return /\b(me da igual|da igual|me da lo mismo|da lo mismo|(me es )?indiferente|cualquier[ao]?|con quien sea|quien sea|(el|la) que (sea|tenga|este|haya|pueda)|quien tenga|no tengo preferencia|sin preferencia|ningun[ao]? en (particular|especial)|(el|la) primer[ao]? (que|disponible|libre)|(el|la) mas pronto|(el|la) de antes)\b/.test(t);
+}
+
+/** La respuesta pide el apellido. */
+export function pideApellido(texto: string): boolean {
+  const t = sinAcentos(texto);
+  return t.includes('?') && /\bapellidos?\b/.test(t);
+}
+
+/** Siguiente dato de la ficha que falta, tras tener nombre y apellido. */
+export function siguienteDatoPersonal(booking: any): string {
+  const b = booking || {};
+  const gracias = b.Nombre ? `Gracias, ${b.Nombre}.` : 'Gracias.';
+  if (!b.rut) return `${gracias} ¿Me das tu RUT, con el dígito verificador?`;
+  if (!b.direccion) return `${gracias} ¿Y tu dirección?`;
+  if (!b.correo) return `${gracias} ¿Y tu correo?`;
+  return buildMissingDataReply(b);
+}
+
+/**
+ * Respuesta cuando al paciente le da igual el especialista y el modelo le
+ * preguntó con cuál: se sigue con lo que de verdad falta.
+ */
+export function respuestaSinElegirEspecialista(booking: any): string {
+  const b = booking || {};
+  if (b.fecha && b.hora) {
+    const [d, m, y] = String(b.fecha).split('/').map(Number);
+    const fecha = d && m && y ? formatFechaHumana(new Date(y, m - 1, d)) : b.fecha;
+    return `Entonces el *${fecha}* a las *${b.hora}*. ¿Me das tu nombre y apellido para reservarla?`;
+  }
+  if (b.fecha) return '¿A qué hora te acomoda?';
+  return '¿Qué día te acomoda?';
 }
 
 export function claimsBookingDone(text: string): boolean {
