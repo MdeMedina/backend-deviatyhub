@@ -90,6 +90,46 @@ export class BrainService {
       });
     }
 
+    // Visita nueva: el paciente vuelve después de un día o más sin mensajes.
+    // Las conversaciones no se cierran solas, así que la de un paciente es la
+    // misma durante semanas, con la reserva que dejó a medias. Un "hola, esto
+    // es una prueba" una semana después recibió "me falta la hora para dejar
+    // la reserva", y luego se le ofreció la limpieza que había pedido el día 24.
+    // Se descarta la reserva en curso y el modelo solo ve esta visita: lo de
+    // antes no es contexto, es ruido que contesta por él. Las horas que de
+    // verdad tiene reservadas siguen llegando por HORAS RESERVADAS.
+    // El recorte vale para todos los turnos de la visita, no solo el primero:
+    // en el segundo, el historial vuelve a traer los mensajes de hace una semana.
+    const visita = desdeElUltimoSilencio(params.history, HORAS_PARA_VISITA_NUEVA);
+    params.history = visita.mensajes;
+    if (visita.esNueva) {
+      const habiaReserva = Object.keys(params.metadata?.booking || {}).length > 0;
+      if (habiaReserva || params.currentStep !== 'inicio') {
+        this.logger.log(
+          `Conversación ${params.conversationId}: el paciente vuelve tras ${visita.horasDeSilencio} h; ` +
+            `se descarta la reserva a medias (paso ${params.currentStep}) y se empieza de cero.`,
+        );
+        params.metadata = { ...(params.metadata || {}), booking: {} };
+        params.currentStep = 'inicio';
+        await this.prisma.conversation.update({
+          where: { id: params.conversationId },
+          data: { metadata: params.metadata, currentStep: 'inicio' },
+        });
+      }
+    }
+
+    // Una fecha de reserva que ya pasó no sirve para nada y arrastra al modelo
+    // a hablar de ella. Se borra con su hora; el resto de los datos se conserva.
+    const fechaGuardada = parseFechaReserva(params.metadata?.booking?.fecha);
+    if (fechaGuardada && format(fechaGuardada, 'yyyy-MM-dd') < currentDate) {
+      this.logger.log(`Conversación ${params.conversationId}: la fecha ${params.metadata.booking.fecha} ya pasó; se descarta.`);
+      params.metadata = { ...params.metadata, booking: { ...params.metadata.booking, fecha: '', hora: '' } };
+      await this.prisma.conversation.update({
+        where: { id: params.conversationId },
+        data: { metadata: params.metadata },
+      });
+    }
+
     // Calendario de los próximos días, ya resuelto.
     //
     // Antes se le daba la fecha de hoy y el nombre del día, y el modelo tenía
@@ -1937,6 +1977,45 @@ export function preguntaPorEspecialista(text: string): boolean {
     /\b(especialistas?|profesionales?|doctora?s?|dentista)\b[\s\S]{0,40}\b(prefieres|prefiere|eliges|escoges|quieres atenderte)\b/.test(t) ||
     /\b(prefieres|prefiere|eliges|escoges)\b[\s\S]{0,40}\b(especialistas?|profesionales?|doctora?s?|dentista)\b/.test(t)
   );
+}
+
+/** Horas sin mensajes a partir de las cuales el paciente empieza una visita nueva. */
+export const HORAS_PARA_VISITA_NUEVA = 24;
+
+/**
+ * Mensajes de la visita actual: los que siguen al último silencio largo.
+ * El historial llega en orden cronológico y su último mensaje es el que el
+ * paciente acaba de escribir. Sin fechas en los mensajes no se corta nada.
+ */
+export function desdeElUltimoSilencio(
+  historial: any[] | undefined,
+  horas: number,
+): { esNueva: boolean; mensajes: any[]; horasDeSilencio: number } {
+  const mensajes = historial || [];
+  const instante = (m: any) => new Date(m?.sentAt ?? m?.sent_at ?? NaN).getTime();
+  for (let i = mensajes.length - 1; i > 0; i--) {
+    const actual = instante(mensajes[i]);
+    const anterior = instante(mensajes[i - 1]);
+    if (Number.isNaN(actual) || Number.isNaN(anterior)) return { esNueva: false, mensajes, horasDeSilencio: 0 };
+    const silencio = (actual - anterior) / 3_600_000;
+    if (silencio >= horas) {
+      // Solo cuenta como visita nueva si el corte es justo antes del mensaje
+      // de ahora; un silencio más atrás ya se trató en su momento.
+      const esNueva = i === mensajes.length - 1;
+      return { esNueva, mensajes: mensajes.slice(i), horasDeSilencio: Math.round(silencio) };
+    }
+  }
+  return { esNueva: false, mensajes, horasDeSilencio: 0 };
+}
+
+/** "25/09/2026" o "2026-09-25" → fecha local; cualquier otra cosa → null. */
+export function parseFechaReserva(fecha?: string): Date | null {
+  const t = String(fecha || '').trim();
+  const dmy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);
+  if (dmy) return new Date(+dmy[3], +dmy[2] - 1, +dmy[1]);
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
+  return null;
 }
 
 function sinAcentos(texto: string): string {
