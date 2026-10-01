@@ -4,6 +4,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { BrainService } from '../brain/brain.service';
 import { EventBus } from '@deviaty/shared-events';
+import { EnrutadorDeClinica, numeroDeDestino } from './clinic-router';
 
 /**
  * Corta-bucles.
@@ -62,6 +63,7 @@ export function motivoDeBucle(
 @Processor('messages')
 export class AgentProcessor extends WorkerHost {
   private readonly logger = new Logger(AgentProcessor.name);
+  private readonly enrutador: EnrutadorDeClinica;
 
   constructor(
     @Inject(PrismaService)
@@ -72,6 +74,12 @@ export class AgentProcessor extends WorkerHost {
     private readonly eventBus: EventBus,
   ) {
     super();
+    this.enrutador = new EnrutadorDeClinica(this.prisma as any, {
+      secreto: process.env.JWT_ACCESS_SECRET,
+      numeroGlobal: process.env.WHATSAPP_PHONE_NUMBER_ID,
+      clinicaPorDefecto: process.env.WHATSAPP_DEFAULT_CLINIC_ID || undefined,
+      avisar: (m) => this.logger.warn(m),
+    });
   }
 
   /** Avisa al Core para que el panel refresque la conversación en vivo. */
@@ -278,16 +286,17 @@ export class AgentProcessor extends WorkerHost {
 
     const fromPhone: string = msg.from; // dígitos E.164 sin '+', ej: 56912345678
     if (!fromPhone) return null;
-    const profileName = value?.contacts?.[0]?.profile?.name || null;
+    // En un webhook agrupado, `contacts` trae a todos los remitentes: se toma el de este mensaje.
+    const remitente = (value?.contacts || []).find((c: any) => c?.wa_id === fromPhone) || value?.contacts?.[0];
+    const profileName = remitente?.profile?.name || null;
 
-    // Resolver clínica. Demo: clínica única. (Multi-tenant: mapear por
-    // value.metadata.phone_number_id contra clinic_integrations.)
-    const clinic = await this.prisma.clinic.findFirst();
-    if (!clinic) {
-      this.logger.error('No hay clínica configurada para asociar el mensaje entrante.');
+    // La clínica la decide el número al que escribió el paciente.
+    const enrutado = await this.enrutador.clinicaDe(numeroDeDestino(payload));
+    if (enrutado.clinicId === null) {
+      this.logger.error(`Mensaje entrante descartado: ${enrutado.motivo}.`);
       return null;
     }
-    const clinic_id = clinic.id;
+    const clinic_id = enrutado.clinicId;
 
     // Resolver/crear contacto por teléfono (toleramos con y sin '+')
     const plus = `+${fromPhone}`;

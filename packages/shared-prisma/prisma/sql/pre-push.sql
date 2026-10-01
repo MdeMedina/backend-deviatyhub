@@ -23,3 +23,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS doctors_user_id_key ON doctors (user_id);
 -- y no pueda tener duplicados, así que se crea aquí.
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS code text;
 CREATE UNIQUE INDEX IF NOT EXISTS appointments_code_key ON appointments (code);
+
+-- Número de WhatsApp de cada clínica, en claro, para enrutar los mensajes
+-- entrantes. Mismo motivo que los anteriores: es un UNIQUE sobre una columna nueva.
+ALTER TABLE clinic_integrations ADD COLUMN IF NOT EXISTS external_id text;
+CREATE UNIQUE INDEX IF NOT EXISTS clinic_integrations_external_id_key ON clinic_integrations (external_id);

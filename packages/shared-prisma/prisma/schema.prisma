@@ -176,6 +176,10 @@ model ClinicIntegration {
   type         IntegrationType
   connected    Boolean?        @default(false)
   credentials  Json?
+  /// Identificador del recurso en el proveedor, en claro para poder buscarlo.
+  /// En WhatsApp es el phone_number_id: con él se sabe a qué clínica va cada
+  /// mensaje entrante. Único: un número no puede atender a dos clínicas.
+  externalId   String?         @unique @map("external_id")
   lastTestedAt DateTime?       @map("last_tested_at") @db.Timestamptz
   lastTestOk   Boolean?        @map("last_test_ok")
   updatedAt    DateTime?       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz

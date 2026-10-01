@@ -30,6 +30,30 @@ const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'deviaty_secret_token'
 const APP_SECRET = process.env.WHATSAPP_WEBHOOK_SECRET || '';
 
 /**
+ * Meta puede agrupar en un mismo webhook varios mensajes, y de números
+ * distintos (cada `entry` es una cuenta, cada `change` un número). El agente
+ * procesa un mensaje por trabajo y decide la clínica por el número de destino,
+ * así que aquí se reparte: un payload por mensaje, con su propio `metadata`.
+ * Los avisos de estado (entregado, leído) no traen mensajes y no se encolan;
+ * el agente ya los descartaba.
+ */
+function separarPorMensaje(payload: any): any[] {
+  const salida: any[] = [];
+  for (const entry of payload?.entry || []) {
+    for (const change of entry?.changes || []) {
+      const value = change?.value;
+      for (const message of value?.messages || []) {
+        salida.push({
+          ...payload,
+          entry: [{ ...entry, changes: [{ ...change, value: { ...value, messages: [message] } }] }],
+        });
+      }
+    }
+  }
+  return salida;
+}
+
+/**
  * Endpoint de verificación de Meta (GET)
  */
 server.get('/webhook/whatsapp', async (request, reply) => {
@@ -63,9 +87,12 @@ server.post('/webhook/whatsapp', { config: { rawBody: true } }, async (request, 
   // 2. Procesar Payload
   try {
     const payload = JSON.parse(body);
-    server.log.info('Mensaje recibido, encolando...');
-    
-    await enqueueMessage('whatsapp', payload);
+    const mensajes = separarPorMensaje(payload);
+    server.log.info(`Webhook con ${mensajes.length} mensaje(s), encolando...`);
+
+    for (const unMensaje of mensajes) {
+      await enqueueMessage('whatsapp', unMensaje);
+    }
     
     return reply.status(200).send('EVENT_RECEIVED');
   } catch (error: any) {

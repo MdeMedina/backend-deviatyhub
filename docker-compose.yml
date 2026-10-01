@@ -135,6 +135,14 @@ services:
       # medium | high. Por defecto 'minimal', porque el razonamiento cuesta
       # segundos por turno y aquí aporta poco.
       - OPENAI_REASONING_EFFORT=${OPENAI_REASONING_EFFORT:-}
+      # Enrutado de WhatsApp: cada mensaje entrante va a la clínica dueña del
+      # número que lo recibió. Hace falta la clave para leer el número de las
+      # integraciones antiguas, y el número global del .env para saber cuál es.
+      # Los mensajes a ese número global van a WHATSAPP_DEFAULT_CLINIC_ID o, si
+      # está vacía, a la clínica más antigua.
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
+      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
+      - WHATSAPP_DEFAULT_CLINIC_ID=${WHATSAPP_DEFAULT_CLINIC_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

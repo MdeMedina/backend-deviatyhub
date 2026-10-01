@@ -536,25 +536,38 @@ export class ClinicService {
       encrypted_data: encryptedData,
     };
 
-    await this.prisma.clinicIntegration.upsert({
-      where: {
-        clinicId_type: { clinicId, type: type as any },
-      },
-      update: {
-        connected: false,
-        lastTestedAt: null,
-        lastTestOk: null,
-        credentials: updatedCreds,
-      },
-      create: {
-        clinicId,
-        type: type as any,
-        connected: false,
-        lastTestedAt: null,
-        lastTestOk: null,
-        credentials: updatedCreds,
-      },
-    });
+    // El número de WhatsApp va también en claro: es lo que usa el agente para
+    // saber a qué clínica pertenece cada mensaje entrante.
+    const externalId = type === 'WHATSAPP' ? cleanCredentials.phone_number_id?.trim() || null : undefined;
+
+    try {
+      await this.prisma.clinicIntegration.upsert({
+        where: {
+          clinicId_type: { clinicId, type: type as any },
+        },
+        update: {
+          connected: false,
+          lastTestedAt: null,
+          lastTestOk: null,
+          credentials: updatedCreds,
+          externalId,
+        },
+        create: {
+          clinicId,
+          type: type as any,
+          connected: false,
+          lastTestedAt: null,
+          lastTestOk: null,
+          credentials: updatedCreds,
+          externalId,
+        },
+      });
+    } catch (error) {
+      if ((error as any)?.code === 'P2002') {
+        throw new BadRequestException('Ese número de WhatsApp ya está conectado a otra clínica.');
+      }
+      throw error;
+    }
 
     return {
       success: true,
