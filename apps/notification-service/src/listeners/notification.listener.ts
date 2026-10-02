@@ -25,7 +25,10 @@ export class NotificationListener implements OnModuleInit {
     // 1. Escuchar invitaciones de usuarios
     this.eventBus.subscribe(REDIS_CHANNELS.USER_INVITED, async (payload: any) => {
       this.logger.log(`Evento recibido: ${REDIS_CHANNELS.USER_INVITED}`);
-      const { email, name, clinicId, token } = payload;
+      // auth-service publica el token como `inviteToken`; se leía `token` y el
+      // enlace del correo salía como set-password?token=undefined.
+      const { email, name, clinicId } = payload;
+      const token = payload.token ?? payload.inviteToken;
       
       const clinic = await this.prisma.clinic.findUnique({ where: { id: clinicId } });
       const clinicName = clinic?.name || 'Tu Clínica';

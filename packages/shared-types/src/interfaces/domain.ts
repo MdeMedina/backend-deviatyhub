@@ -188,6 +188,8 @@ export interface IJwtPayload {
   role: UserRole;
   email: string;
   permissions: IPermissions;
+  /** Superusuario de la plataforma (equipo Deviaty). */
+  platformAdmin?: boolean;
   iat?: number;
   exp?: number;
 }

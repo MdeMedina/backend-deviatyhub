@@ -86,6 +86,8 @@ services:
       - REDIS_PORT=6379
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      # Correos del equipo de la plataforma (backoffice), separados por coma.
+      - PLATFORM_ADMIN_EMAILS=${PLATFORM_ADMIN_EMAILS:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,6 +104,8 @@ services:
     ports:
       - "${PROXY_BIND_IP:-172.17.0.1}:3002:3002"
     environment:
+      # Enlace de invitación que el backoffice muestra al dar de alta una clínica.
+      - FRONTEND_URL=${FRONTEND_URL:-https://app.dentral.cl}
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
       # descartaba como pasada toda la tarde.
@@ -182,6 +186,9 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - GMAIL_USER=${GMAIL_USER}
+      # Base de los enlaces de los correos (invitaciones). Sin ella caían a
+      # http://localhost:3000.
+      - FRONTEND_URL=${FRONTEND_URL:-https://app.dentral.cl}
       - GMAIL_PASS=${GMAIL_PASS}
     depends_on:
       postgres:

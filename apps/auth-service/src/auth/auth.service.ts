@@ -6,6 +6,20 @@ import { hashBcrypt, compareBcrypt, signJWT, verifyJWT } from '@deviaty/shared-u
 import { IJwtPayload } from '@deviaty/shared-types';
 import { REDIS_CHANNELS, EventBus } from '@deviaty/shared-events';
 
+/**
+ * Superusuario de la plataforma: marcado en la base de datos o con su correo en
+ * PLATFORM_ADMIN_EMAILS (separados por coma). La lista evita tener que tocar la
+ * base de producción a mano para dar o quitar el acceso al backoffice.
+ */
+export function esAdminDePlataforma(user: { email: string; platformAdmin?: boolean | null }): boolean {
+  if (user.platformAdmin) return true;
+  const lista = String(process.env.PLATFORM_ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return lista.includes(String(user.email || '').toLowerCase());
+}
+
 @Injectable()
 export class AuthService {
   private readonly accessSecret: string;
@@ -95,6 +109,7 @@ export class AuthService {
       role: user.role.name as any,
       email: user.email,
       permissions: user.role.permissions as any,
+      platformAdmin: esAdminDePlataforma(user),
     };
 
     const accessToken = signJWT(payload, this.accessSecret, '15m');
@@ -120,6 +135,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         clinic_id: user.clinicId,
+        platform_admin: esAdminDePlataforma(user),
         role: {
           id: user.role.id,
           name: user.role.name,
@@ -207,6 +223,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       clinic_id: user.clinicId,
+      platform_admin: esAdminDePlataforma(user),
       active: user.active,
       role: {
         id: user.role.id,
@@ -270,6 +287,7 @@ export class AuthService {
       role: user.role.name as any,
       email: user.email,
       permissions: user.role.permissions as any,
+      platformAdmin: esAdminDePlataforma(user),
     };
 
     const newAccessToken = signJWT(payload, this.accessSecret, '15m');

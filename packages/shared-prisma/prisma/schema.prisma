@@ -142,6 +142,10 @@ model User {
   inviteToken   String?   @map("invite_token")
   inviteExpires DateTime? @map("invite_expires") @db.Timestamptz
   roleId        String    @map("role_id") @db.Uuid
+  /// Superusuario de la plataforma (el equipo de Deviaty), no de una clínica.
+  /// Entra al backoffice y puede actuar sobre cualquier clínica. Se asigna a
+  /// mano en la base de datos: ningún endpoint lo concede.
+  platformAdmin Boolean   @default(false) @map("platform_admin")
   active        Boolean?  @default(true)
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz

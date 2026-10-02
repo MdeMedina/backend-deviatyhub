@@ -5,6 +5,11 @@ import fastifyReplyFrom from '@fastify/reply-from';
 import { verifyJWT } from '@deviaty/shared-utils';
 import { PROXY_CONFIG } from './proxy.config';
 
+// Rutas del backoffice: solo para superusuarios de la plataforma.
+const PLATFORM_PREFIX = '/api/core/platform';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const PUBLIC_PATHS = new Set([
   '/api/auth/register',
   '/api/auth/login',
@@ -46,6 +51,7 @@ export class ProxyModule implements OnModuleInit {
         let clinicId: string | undefined;
         let userId: string | undefined;
         let isSuperadmin = 'false';
+        let platformAdmin = false;
 
         if (jwtToken) {
           try {
@@ -55,6 +61,19 @@ export class ProxyModule implements OnModuleInit {
             clinicId = payload.clinicId;
             userId = payload.userId;
             isSuperadmin = String(payload.role === 'SUPERADMIN');
+            platformAdmin = payload.platformAdmin === true;
+
+            // Un superusuario de la plataforma puede trabajar dentro de otra
+            // clínica: el backoffice manda la clínica en x-act-as-clinic y
+            // todos los servicios la ven como si fuera la suya. A cualquier
+            // otro usuario se le ignora la cabecera.
+            const actuarComo = String(req.headers['x-act-as-clinic'] || '').trim();
+            if (platformAdmin && UUID.test(actuarComo)) {
+              clinicId = actuarComo;
+            }
+            // Dentro de cualquier clínica, el equipo de la plataforma tiene
+            // los permisos del dueño: está ahí para administrarla.
+            if (platformAdmin) isSuperadmin = 'true';
           } catch (error: any) {
             if (!isPublic) {
               console.warn(`[Proxy Auth] Token validation failed for ${urlPath}: ${error.message}`);
@@ -80,6 +99,16 @@ export class ProxyModule implements OnModuleInit {
           return;
         }
 
+        // El backoffice no existe para quien no es superusuario. Se corta aquí,
+        // y core lo vuelve a comprobar por su cuenta.
+        if (urlPath.startsWith(PLATFORM_PREFIX) && !platformAdmin) {
+          reply.status(403).send({
+            success: false,
+            error: { code: 'FORBIDDEN', message: 'Solo para el equipo de la plataforma' },
+          });
+          return;
+        }
+
         const startTime = Date.now();
         const targetUrl = `${rule.target}${req.url.replace(rule.prefix, '')}`;
         console.log(`[Proxy] 📥 [${req.method}] ${req.url} -> ${targetUrl}`);
@@ -94,6 +123,9 @@ export class ProxyModule implements OnModuleInit {
               newHeaders['x-user-id'] = userId;
             }
             newHeaders['x-is-superadmin'] = isSuperadmin;
+            // Siempre se escribe, nunca se reenvía la que mande el cliente.
+            newHeaders['x-platform-admin'] = String(platformAdmin);
+            delete newHeaders['x-act-as-clinic'];
             return newHeaders;
           },
           onResponse: (request: any, reply: any, res: any) => {

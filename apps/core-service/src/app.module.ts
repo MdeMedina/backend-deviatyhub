@@ -14,6 +14,7 @@ import { TreatmentModule } from './treatment/treatment.module';
 import { AgendaModule } from './agenda/agenda.module';
 import { ConversationModule } from './conversation/conversation.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { PlatformModule } from './platform/platform.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { MetricsModule } from './metrics/metrics.module';
     AgendaModule,
     ConversationModule,
     MetricsModule,
+    PlatformModule,
   ],
   controllers: [],
   providers: [
