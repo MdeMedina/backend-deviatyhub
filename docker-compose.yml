@@ -1,3 +1,13 @@
+# PUERTOS. Ningún servicio interno se publica en la IP pública: no verifican
+# tokens por su cuenta y se fían de las cabeceras x-clinic-id / x-user-id /
+# x-is-superadmin que pone el gateway. Publicados en 0.0.0.0, cualquiera podía
+# saltarse el gateway y leer o modificar los datos de cualquier clínica.
+# - gateway (3000), core (3002, socket.io) y webhook (3005) se atan a docker0
+#   (172.17.0.1), que es por donde entra el Caddy de app.dentral.cl. En una
+#   máquina sin docker0 (Docker Desktop), PROXY_BIND_IP=127.0.0.1 en el .env.
+# - El resto solo en 127.0.0.1, para depurar desde el propio servidor.
+# - nginx (80) sigue público: es la entrada del túnel de Cloudflare y enruta
+#   únicamente /api (al gateway), /webhook y /socket.io.
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -36,7 +46,7 @@ services:
       dockerfile: apps/gateway/Dockerfile
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${PROXY_BIND_IP:-172.17.0.1}:3000:3000"
     environment:
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
@@ -62,7 +72,7 @@ services:
       dockerfile: apps/auth-service/Dockerfile
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
@@ -90,7 +100,7 @@ services:
       dockerfile: apps/core-service/Dockerfile
     restart: unless-stopped
     ports:
-      - "3002:3002"
+      - "${PROXY_BIND_IP:-172.17.0.1}:3002:3002"
     environment:
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
@@ -116,7 +126,7 @@ services:
       dockerfile: apps/agent-service/Dockerfile
     restart: unless-stopped
     ports:
-      - "3003:3003"
+      - "127.0.0.1:3003:3003"
     environment:
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
@@ -157,7 +167,7 @@ services:
       dockerfile: apps/notification-service/Dockerfile
     restart: unless-stopped
     ports:
-      - "3004:3004"
+      - "127.0.0.1:3004:3004"
     environment:
       # Cada cuántos minutos se revisan los recordatorios (3 días, 1 día, 2 horas).
       - REMINDER_INTERVAL_MIN=${REMINDER_INTERVAL_MIN:-5}
@@ -187,7 +197,7 @@ services:
       dockerfile: apps/webhook-service/Dockerfile
     restart: unless-stopped
     ports:
-      - "3005:3005"
+      - "${PROXY_BIND_IP:-172.17.0.1}:3005:3005"
     environment:
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
@@ -209,7 +219,7 @@ services:
       dockerfile: apps/whatsapp-service/Dockerfile
     restart: unless-stopped
     ports:
-      - "3006:3006"
+      - "127.0.0.1:3006:3006"
     environment:
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
