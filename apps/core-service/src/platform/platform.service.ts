@@ -401,6 +401,14 @@ export class PlatformService {
     integracion: { credentials?: unknown; connected?: boolean | null; externalId?: string | null } | undefined,
     usaNumeroGlobal: boolean,
   ) {
+    if ((integracion?.credentials as any)?.mode === 'dentral') {
+      return {
+        source: 'dentral' as const,
+        configured: true,
+        connected: integracion?.connected === true,
+        phone_number_id: integracion?.externalId ?? null,
+      };
+    }
     const propias = Boolean((integracion?.credentials as any)?.encrypted_data);
     // Con credenciales propias mandan esas: el número global ya no le llega.
     if (propias || !usaNumeroGlobal) {

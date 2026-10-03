@@ -74,3 +74,17 @@ export class InviteClinicUserDto {
   @IsEmail()
   email!: string;
 }
+
+export class WhatsAppOwnDto {
+  @IsString()
+  phone_number_id!: string;
+
+  @IsOptional()
+  @IsString()
+  waba_id?: string;
+
+  /** Vacío = se conserva el que había o, si no había, se usa el de Dentral. */
+  @IsOptional()
+  @IsString()
+  access_token?: string;
+}

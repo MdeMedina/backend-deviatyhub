@@ -2,13 +2,49 @@ import { Body, Controller, Delete, Get, Inject, Param, ParseUUIDPipe, Patch, Pos
 import { CurrentUserId } from '@deviaty/shared-nestjs';
 import { PlatformAdminGuard } from './platform.guard';
 import { PlatformService } from './platform.service';
-import { CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto } from './dto/platform.dto';
+import { PlatformWhatsAppService } from './platform-whatsapp.service';
+import { CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto, WhatsAppOwnDto } from './dto/platform.dto';
 
 /** Backoffice del equipo de la plataforma. Nada de aquí depende de la clínica del usuario. */
 @Controller('platform')
 @UseGuards(PlatformAdminGuard)
 export class PlatformController {
-  constructor(@Inject(PlatformService) private readonly platform: PlatformService) {}
+  constructor(
+    @Inject(PlatformService) private readonly platform: PlatformService,
+    @Inject(PlatformWhatsAppService) private readonly whatsapp: PlatformWhatsAppService,
+  ) {}
+
+  // ─── WhatsApp de cada clínica ──────────────────────────────────────
+
+  @Get('clinics/:id/whatsapp')
+  whatsappEstado(@Param('id', ParseUUIDPipe) id: string) {
+    return this.whatsapp.estado(id);
+  }
+
+  @Post('clinics/:id/whatsapp/dentral')
+  whatsappDentral(@Param('id', ParseUUIDPipe) id: string) {
+    return this.whatsapp.asignarNumeroDentral(id);
+  }
+
+  @Post('clinics/:id/whatsapp/own')
+  whatsappPropio(@Param('id', ParseUUIDPipe) id: string, @Body() dto: WhatsAppOwnDto) {
+    return this.whatsapp.configurarPropio(id, dto);
+  }
+
+  @Post('clinics/:id/whatsapp/verify')
+  whatsappVerificar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.whatsapp.verificar(id);
+  }
+
+  @Post('clinics/:id/whatsapp/subscribe')
+  whatsappSuscribir(@Param('id', ParseUUIDPipe) id: string) {
+    return this.whatsapp.suscribirWebhooks(id);
+  }
+
+  @Delete('clinics/:id/whatsapp')
+  whatsappDesconectar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.whatsapp.desconectar(id);
+  }
 
   @Get('overview')
   overview() {
