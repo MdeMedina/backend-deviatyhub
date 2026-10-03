@@ -92,7 +92,7 @@ export class EnrutadorDeClinica {
     if (this.opciones.numeroGlobal && id === this.opciones.numeroGlobal.trim()) {
       const clinica = this.opciones.clinicaPorDefecto
         ? await this.prisma.clinic.findUnique({ where: { id: this.opciones.clinicaPorDefecto }, select: { id: true } })
-        : await this.prisma.clinic.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
+        : await this.prisma.clinic.findFirst({ where: { internal: false }, orderBy: { createdAt: 'asc' }, select: { id: true } });
       if (clinica) return { clinicId: clinica.id, via: 'numero_global' };
       return {
         clinicId: null,

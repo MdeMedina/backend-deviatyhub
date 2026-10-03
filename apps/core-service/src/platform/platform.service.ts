@@ -117,6 +117,7 @@ export class PlatformService {
     const nCitasAgente = contar(citasAgente);
     const ultima = new Map(ultimaActividad.map((f) => [f.clinicId, f._max.sentAt]));
     const wa = new Map(whatsapp.map((w) => [w.clinicId, w]));
+    const delNumeroGlobal = await this.clinicaDelNumeroGlobal();
 
     return clinicas.map((c) => {
       const integracion = wa.get(c.id);
@@ -134,11 +135,7 @@ export class PlatformService {
         conversations_30d: nConversaciones.get(c.id) ?? 0,
         agent_appointments_30d: nCitasAgente.get(c.id) ?? 0,
         last_activity_at: ultima.get(c.id) ?? null,
-        whatsapp: {
-          configured: Boolean((integracion?.credentials as any)?.encrypted_data),
-          connected: integracion?.connected === true,
-          phone_number_id: integracion?.externalId ?? null,
-        },
+        whatsapp: this.estadoWhatsApp(integracion, c.id === delNumeroGlobal),
       };
     });
   }
@@ -188,6 +185,10 @@ export class PlatformService {
       config: clinica.configs,
       schedules: clinica.schedules,
       agent_mode: clinica.agentConfig?.mode ?? null,
+      whatsapp: this.estadoWhatsApp(
+        clinica.integrations.find((i) => i.type === 'WHATSAPP'),
+        clinica.id === (await this.clinicaDelNumeroGlobal()),
+      ),
       // Lo que la plataforma le habilita. La entrada a la plataforma es `active`.
       access: accesosCompletos(clinica.entitlements),
       counts: { doctors: profesionales, treatments: tratamientos, contacts: contactos },
@@ -374,6 +375,47 @@ export class PlatformService {
       inbound_messages_7d: mensajesEntrantes7,
       agent_appointments_30d: citasAgente30,
       human_takeovers_30d: derivaciones30,
+    };
+  }
+
+  /**
+   * Clínica que atiende el número de WhatsApp global del servidor
+   * (WHATSAPP_PHONE_NUMBER_ID): WHATSAPP_DEFAULT_CLINIC_ID o, sin ella, la
+   * clínica más antigua. Mismo criterio que el enrutador del agente. Esa
+   * clínica tiene WhatsApp funcionando aunque no haya guardado credenciales
+   * propias en su panel.
+   */
+  private async clinicaDelNumeroGlobal(): Promise<string | null> {
+    if (!process.env.WHATSAPP_PHONE_NUMBER_ID) return null;
+    const porDefecto = process.env.WHATSAPP_DEFAULT_CLINIC_ID;
+    if (porDefecto) return porDefecto;
+    const masAntigua = await this.prisma.clinic.findFirst({
+      where: { internal: false },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    return masAntigua?.id ?? null;
+  }
+
+  private estadoWhatsApp(
+    integracion: { credentials?: unknown; connected?: boolean | null; externalId?: string | null } | undefined,
+    usaNumeroGlobal: boolean,
+  ) {
+    const propias = Boolean((integracion?.credentials as any)?.encrypted_data);
+    // Con credenciales propias mandan esas: el número global ya no le llega.
+    if (propias || !usaNumeroGlobal) {
+      return {
+        source: propias ? ('clinic' as const) : null,
+        configured: propias,
+        connected: integracion?.connected === true,
+        phone_number_id: integracion?.externalId ?? null,
+      };
+    }
+    return {
+      source: 'server' as const,
+      configured: true,
+      connected: true,
+      phone_number_id: process.env.WHATSAPP_PHONE_NUMBER_ID ?? null,
     };
   }
 

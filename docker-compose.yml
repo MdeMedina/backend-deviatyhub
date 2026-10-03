@@ -108,6 +108,9 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-https://app.dentral.cl}
       # Para distinguir en "Equipo Dentral" el acceso fijado en el servidor.
       - PLATFORM_ADMIN_EMAILS=${PLATFORM_ADMIN_EMAILS:-}
+      # Para mostrar en el backoffice qué clínica usa el número global de WhatsApp.
+      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
+      - WHATSAPP_DEFAULT_CLINIC_ID=${WHATSAPP_DEFAULT_CLINIC_ID:-}
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
       # descartaba como pasada toda la tarde.
