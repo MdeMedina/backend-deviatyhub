@@ -29,13 +29,13 @@ async function main() {
 
   // ── 2. Rol Superadmin ─────────────────────────────────────────
   let superadminRole = await prisma.role.findFirst({
-    where: { clinicId, name: 'Superadmin' },
+    where: { clinicId, name: { in: ['Administrador', 'Superadmin'] } },
   });
   if (!superadminRole) {
     superadminRole = await prisma.role.create({
       data: {
         clinicId,
-        name: 'Superadmin',
+        name: 'Administrador',
         isSuperadmin: true,
         permissions: {
           all: true,

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Inject, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { PlatformAdminGuard } from './platform.guard';
 import { PlatformService } from './platform.service';
-import { CreateClinicDto, UpdateClinicDto } from './dto/platform.dto';
+import { CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto } from './dto/platform.dto';
 
 /** Backoffice del equipo de la plataforma. Nada de aquí depende de la clínica del usuario. */
 @Controller('platform')
@@ -32,6 +32,16 @@ export class PlatformController {
   @Patch('clinics/:id')
   updateClinic(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateClinicDto) {
     return this.platform.updateClinic(id, dto);
+  }
+
+  @Patch('clinics/:id/access')
+  updateAccess(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateAccessDto) {
+    return this.platform.updateAccess(id, dto);
+  }
+
+  @Post('clinics/:id/users')
+  inviteAdmin(@Param('id', ParseUUIDPipe) id: string, @Body() dto: InviteClinicUserDto) {
+    return this.platform.inviteAdmin(id, dto);
   }
 
   @Post('clinics/:id/users/:userId/resend-invite')

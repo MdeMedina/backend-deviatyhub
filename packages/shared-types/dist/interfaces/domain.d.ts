@@ -202,6 +202,8 @@ export interface IJwtPayload {
     permissions: IPermissions;
     /** Superusuario de la plataforma (equipo Deviaty). */
     platformAdmin?: boolean;
+    /** Módulos del panel que la plataforma le habilita a la clínica. */
+    modules?: Record<string, boolean>;
     iat?: number;
     exp?: number;
 }

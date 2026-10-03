@@ -5,6 +5,7 @@ import { EventBus } from '@deviaty/shared-events';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { enviarYRegistrar } from '../outbound.util';
+import { agenteHabilitado, recordatoriosHabilitados } from '@deviaty/shared-utils';
 
 /**
  * Los tres avisos, del más lejano al más cercano.
@@ -71,6 +72,15 @@ export class ReminderService implements OnModuleInit, OnModuleDestroy {
     });
 
     for (const cita of citas) {
+      // Clínica suspendida o recordatorios bloqueados desde la plataforma. No
+      // se marca nada: si se reactiva, los avisos que aún tocan salen.
+      if (
+        cita.clinic?.active === false ||
+        !recordatoriosHabilitados(cita.clinic?.entitlements) ||
+        !agenteHabilitado(cita.clinic?.entitlements, 'whatsapp')
+      ) {
+        continue;
+      }
       try {
         await this.procesar(cita, ahora);
       } catch (e) {

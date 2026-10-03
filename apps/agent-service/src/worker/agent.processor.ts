@@ -5,6 +5,7 @@ import { PrismaService } from '@deviaty/shared-prisma';
 import { BrainService } from '../brain/brain.service';
 import { EventBus } from '@deviaty/shared-events';
 import { EnrutadorDeClinica, numeroDeDestino } from './clinic-router';
+import { agenteHabilitado } from '@deviaty/shared-utils';
 
 /**
  * Corta-bucles.
@@ -140,6 +141,22 @@ export class AgentProcessor extends WorkerHost {
       if ((agentConfig as any)?.mode === 'PAUSED') {
         this.logger.warn(
           `Agente en PAUSA para la clínica ${clinic_id}. No se responde a ${conversation_id}.`,
+        );
+        return;
+      }
+
+      // 1.b' Bloqueo desde la plataforma: clínica suspendida, agente apagado o
+      //      canal no habilitado. Igual que la pausa, el mensaje queda en la
+      //      bandeja; la diferencia es que esto lo decide el backoffice y la
+      //      clínica no lo puede revertir desde su panel.
+      const clinica = await this.prisma.clinic.findUnique({
+        where: { id: clinic_id },
+        select: { active: true, entitlements: true },
+      });
+      const canal = String(conversation.channel || '').toLowerCase() === 'instagram' ? 'instagram' : 'whatsapp';
+      if (clinica?.active === false || !agenteHabilitado(clinica?.entitlements, canal)) {
+        this.logger.warn(
+          `Agente bloqueado por la plataforma para la clínica ${clinic_id} (canal ${canal}). No se responde a ${conversation_id}.`,
         );
         return;
       }

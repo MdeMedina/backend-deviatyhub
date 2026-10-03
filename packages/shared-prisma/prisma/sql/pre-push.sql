@@ -28,3 +28,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS appointments_code_key ON appointments (code);
 -- entrantes. Mismo motivo que los anteriores: es un UNIQUE sobre una columna nueva.
 ALTER TABLE clinic_integrations ADD COLUMN IF NOT EXISTS external_id text;
 CREATE UNIQUE INDEX IF NOT EXISTS clinic_integrations_external_id_key ON clinic_integrations (external_id);
+
+-- El dueño de una clínica se llama "Administrador". "Superusuario" queda para
+-- el equipo de la plataforma, y ver "Superadmin" en el panel de una clínica
+-- daba a entender que tenía acceso a todo Dentral. Solo renombra: los permisos
+-- no cambian. Idempotente: tras la primera vez no encuentra filas.
+UPDATE roles SET name = 'Administrador' WHERE name = 'Superadmin' AND is_superadmin = true;

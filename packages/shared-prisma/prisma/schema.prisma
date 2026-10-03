@@ -90,6 +90,10 @@ model Clinic {
   plan         ClinicPlan @default(STARTER)
   active       Boolean?   @default(true)
   billingEmail String     @map("billing_email")
+  /// Lo que la plataforma le habilita (módulos del panel, agente, canales,
+  /// acciones, recordatorios). Solo se edita desde el backoffice. Vacío =
+  /// todo permitido. Ver accesos.util en shared-utils.
+  entitlements Json       @default("{}")
   createdAt    DateTime?  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime?  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 

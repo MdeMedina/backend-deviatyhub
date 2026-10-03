@@ -1,8 +1,8 @@
-import { Injectable, UnauthorizedException, ConflictException, Inject, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, Inject, BadRequestException, Logger, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
-import { hashBcrypt, compareBcrypt, signJWT, verifyJWT } from '@deviaty/shared-utils';
+import { hashBcrypt, compareBcrypt, signJWT, verifyJWT, recortarPermisos, modulosDeClinica } from '@deviaty/shared-utils';
 import { IJwtPayload } from '@deviaty/shared-types';
 import { REDIS_CHANNELS, EventBus } from '@deviaty/shared-events';
 
@@ -87,7 +87,7 @@ export class AuthService {
     // 1. Buscar usuario
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
-      include: { role: true },
+      include: { role: true, clinic: { select: { name: true, active: true, entitlements: true } } },
     });
 
     if (!user || !user.passwordHash) {
@@ -102,13 +102,17 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
+    this.comprobarAccesoDeClinica(user);
+
     // 3. Generar Tokens
     const payload: IJwtPayload = {
       userId: user.id,
       clinicId: user.clinicId,
       role: user.role.name as any,
       email: user.email,
-      permissions: user.role.permissions as any,
+      // Los del rol, recortados a lo que la plataforma le habilita a la clínica.
+      permissions: recortarPermisos(user.role.permissions, user.clinic?.entitlements) as any,
+      modules: modulosDeClinica(user.clinic?.entitlements),
       platformAdmin: esAdminDePlataforma(user),
     };
 
@@ -136,14 +140,28 @@ export class AuthService {
         email: user.email,
         clinic_id: user.clinicId,
         platform_admin: esAdminDePlataforma(user),
+        clinic_name: user.clinic?.name ?? null,
+        clinic_modules: modulosDeClinica(user.clinic?.entitlements),
         role: {
           id: user.role.id,
           name: user.role.name,
           is_superadmin: user.role.isSuperadmin || false,
-          permissions: user.role.permissions,
+          permissions: recortarPermisos(user.role.permissions, user.clinic?.entitlements),
         },
       },
     };
+  }
+
+  /**
+   * La plataforma puede cortarle la entrada a una clínica entera desde el
+   * backoffice (clinics.active = false). El equipo de la plataforma entra igual.
+   */
+  private comprobarAccesoDeClinica(user: { email: string; platformAdmin?: boolean | null; clinic?: { active: boolean | null } | null }) {
+    if (esAdminDePlataforma(user)) return;
+    if (user.clinic?.active === false) {
+      this.logger.warn(`Entrada bloqueada: la clínica de ${user.email} está suspendida.`);
+      throw new ForbiddenException('El acceso de tu clínica a Dentral está suspendido. Escríbenos para reactivarlo.');
+    }
   }
 
   async logout(accessToken: string, refreshToken: string) {
@@ -211,25 +229,28 @@ export class AuthService {
     this.logger.log(`getMe - Fetching user context for userId: ${userId}`);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { role: true },
+      include: { role: true, clinic: { select: { name: true, active: true, entitlements: true } } },
     });
 
     if (!user) {
       this.logger.warn(`getMe - User: ${userId} not found`);
       throw new UnauthorizedException();
     }
+    this.comprobarAccesoDeClinica(user);
 
     return {
       id: user.id,
       email: user.email,
       clinic_id: user.clinicId,
       platform_admin: esAdminDePlataforma(user),
+      clinic_name: user.clinic?.name ?? null,
+      clinic_modules: modulosDeClinica(user.clinic?.entitlements),
       active: user.active,
       role: {
         id: user.role.id,
         name: user.role.name,
         is_superadmin: user.role.isSuperadmin || false,
-        permissions: user.role.permissions,
+        permissions: recortarPermisos(user.role.permissions, user.clinic?.entitlements),
       },
     };
   }
@@ -273,20 +294,25 @@ export class AuthService {
     // 4. Generar nuevo par
     const user = await this.prisma.user.findUnique({
       where: { id: decoded.userId },
-      include: { role: true },
+      include: { role: true, clinic: { select: { name: true, active: true, entitlements: true } } },
     });
 
     if (!user) {
       this.logger.warn(`refreshTokens - User ${decoded.userId} not found`);
       throw new UnauthorizedException('Usuario no encontrado');
     }
+    // Una clínica bloqueada pierde la sesión en el siguiente refresco (como
+    // mucho 15 minutos, lo que dura el token de acceso).
+    this.comprobarAccesoDeClinica(user);
 
     const payload: IJwtPayload = {
       userId: user.id,
       clinicId: user.clinicId,
       role: user.role.name as any,
       email: user.email,
-      permissions: user.role.permissions as any,
+      // Los del rol, recortados a lo que la plataforma le habilita a la clínica.
+      permissions: recortarPermisos(user.role.permissions, user.clinic?.entitlements) as any,
+      modules: modulosDeClinica(user.clinic?.entitlements),
       platformAdmin: esAdminDePlataforma(user),
     };
 

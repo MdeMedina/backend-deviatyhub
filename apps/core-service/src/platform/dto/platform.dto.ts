@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsObject, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class CreateClinicDto {
   @IsString()
@@ -52,4 +52,25 @@ export class UpdateClinicDto {
   @IsOptional()
   @IsEmail()
   billingEmail?: string;
+}
+
+/** Accesos de la clínica. Solo se aceptan las claves conocidas; el servicio descarta el resto. */
+export class UpdateAccessDto {
+  @IsOptional()
+  @IsObject()
+  modules?: Record<string, boolean>;
+
+  @IsOptional()
+  @IsObject()
+  agent?: {
+    enabled?: boolean;
+    channels?: Record<string, boolean>;
+    actions?: Record<string, boolean>;
+    reminders?: boolean;
+  };
+}
+
+export class InviteClinicUserDto {
+  @IsEmail()
+  email!: string;
 }

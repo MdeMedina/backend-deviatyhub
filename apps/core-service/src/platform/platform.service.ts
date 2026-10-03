@@ -3,7 +3,43 @@ import { PrismaService } from '@deviaty/shared-prisma';
 import { EventBus, REDIS_CHANNELS } from '@deviaty/shared-events';
 import { randomUUID } from 'crypto';
 import { subDays } from 'date-fns';
-import { CreateClinicDto, UpdateClinicDto } from './dto/platform.dto';
+import { CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto } from './dto/platform.dto';
+import {
+  ACCIONES_AGENTE,
+  CANALES_AGENTE,
+  MODULOS_CLINICA,
+  agenteHabilitado,
+  modulosDeClinica,
+} from '@deviaty/shared-utils';
+
+/**
+ * Los accesos de una clínica, completos: cada clave con su valor. Canales,
+ * acciones y recordatorios se muestran por sí mismos, aparte del interruptor
+ * general del agente, para que al reencenderlo vuelva todo como estaba.
+ */
+export function accesosCompletos(entitlements: unknown) {
+  const agente = ((entitlements as any)?.agent || {}) as Record<string, any>;
+  return {
+    modules: modulosDeClinica(entitlements),
+    agent: {
+      enabled: agenteHabilitado(entitlements),
+      channels: Object.fromEntries(CANALES_AGENTE.map((c) => [c, agente.channels?.[c] !== false])),
+      actions: Object.fromEntries(ACCIONES_AGENTE.map((a) => [a, agente.actions?.[a] !== false])),
+      reminders: agente.reminders !== false,
+    },
+  };
+}
+
+/** Solo booleanos y solo claves conocidas: lo demás se descarta. */
+function soloClaves(origen: unknown, claves: readonly string[]): Record<string, boolean> {
+  const salida: Record<string, boolean> = {};
+  if (!origen || typeof origen !== 'object') return salida;
+  for (const k of claves) {
+    const v = (origen as Record<string, unknown>)[k];
+    if (typeof v === 'boolean') salida[k] = v;
+  }
+  return salida;
+}
 
 /** Días que dura una invitación del alta. Una clínica nueva no siempre la abre el mismo día. */
 const DIAS_INVITACION = 7;
@@ -151,6 +187,8 @@ export class PlatformService {
       config: clinica.configs,
       schedules: clinica.schedules,
       agent_mode: clinica.agentConfig?.mode ?? null,
+      // Lo que la plataforma le habilita. La entrada a la plataforma es `active`.
+      access: accesosCompletos(clinica.entitlements),
       counts: { doctors: profesionales, treatments: tratamientos, contacts: contactos },
       // Nunca se devuelven las credenciales: solo si están y si funcionan.
       integrations: clinica.integrations.map((i) => ({
@@ -216,7 +254,7 @@ export class PlatformService {
       await tx.clinicSchedule.createMany({ data: HORARIO_INICIAL.map((h) => ({ ...h, clinicId: clinica.id })) });
       await tx.agentConfig.create({ data: { clinicId: clinica.id, mode: 'PAUSED' } });
       const rol = await tx.role.create({
-        data: { clinicId: clinica.id, name: 'Superadmin', isSuperadmin: true, permissions: PERMISOS_DUENO },
+        data: { clinicId: clinica.id, name: 'Administrador', isSuperadmin: true, permissions: PERMISOS_DUENO },
       });
       const admin = await tx.user.create({
         data: { email: adminEmail, clinicId: clinica.id, roleId: rol.id, inviteToken, inviteExpires, active: true },
@@ -249,6 +287,54 @@ export class PlatformService {
       },
     });
     return this.getClinic(id);
+  }
+
+  /**
+   * Cambia los accesos de la clínica. Se fusiona con lo que había: lo que no
+   * viene en la petición no cambia.
+   */
+  async updateAccess(id: string, dto: UpdateAccessDto) {
+    const clinica = await this.prisma.clinic.findUnique({ where: { id }, select: { entitlements: true } });
+    if (!clinica) throw new NotFoundException('No existe esa clínica.');
+    const actual = (clinica.entitlements as any) || {};
+
+    const agente = dto.agent || {};
+    const nuevo = {
+      ...actual,
+      modules: { ...(actual.modules || {}), ...soloClaves(dto.modules, MODULOS_CLINICA) },
+      agent: {
+        ...(actual.agent || {}),
+        ...soloClaves(agente, ['enabled', 'reminders']),
+        channels: { ...(actual.agent?.channels || {}), ...soloClaves(agente.channels, CANALES_AGENTE) },
+        actions: { ...(actual.agent?.actions || {}), ...soloClaves(agente.actions, ACCIONES_AGENTE) },
+      },
+    };
+
+    await this.prisma.clinic.update({ where: { id }, data: { entitlements: nuevo } });
+    this.logger.log(`Accesos de la clínica ${id} actualizados: ${JSON.stringify(nuevo)}`);
+    return this.getClinic(id);
+  }
+
+  /**
+   * Invita a un administrador más a la clínica, con el rol de dueño. Las demás
+   * personas las invita la propia clínica desde su panel, con sus roles.
+   */
+  async inviteAdmin(clinicId: string, dto: InviteClinicUserDto) {
+    const email = dto.email.trim().toLowerCase();
+    const [rol, existente] = await Promise.all([
+      this.prisma.role.findFirst({ where: { clinicId, isSuperadmin: true }, orderBy: { createdAt: 'asc' } }),
+      this.prisma.user.findUnique({ where: { email }, select: { id: true } }),
+    ]);
+    if (!rol) throw new NotFoundException('La clínica no tiene rol de administrador.');
+    if (existente) throw new ConflictException(`El correo ${email} ya tiene una cuenta en la plataforma.`);
+
+    const inviteToken = randomUUID();
+    const inviteExpires = new Date(Date.now() + DIAS_INVITACION * 24 * 60 * 60 * 1000);
+    const usuario = await this.prisma.user.create({
+      data: { email, clinicId, roleId: rol.id, inviteToken, inviteExpires, active: true },
+    });
+    await this.publicarInvitacion(usuario.id, email, clinicId, inviteToken);
+    return { user: { id: usuario.id, email }, invite_link: this.enlaceInvitacion(inviteToken), invite_expires: inviteExpires };
   }
 
   /** Nueva invitación para quien todavía no ha puesto contraseña. */

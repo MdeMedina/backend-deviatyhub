@@ -9,6 +9,7 @@ import {
 import { CurrentClinicId } from '@deviaty/shared-nestjs';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { BrainService } from './brain/brain.service';
+import { agenteHabilitado } from '@deviaty/shared-utils';
 
 @Controller('agent')
 export class AgentController {
@@ -36,6 +37,20 @@ export class AgentController {
     }
 
     this.logger.log(`Simulation request for clinic: ${clinicId}, session: ${session_id}`);
+
+    // Con el agente apagado desde la plataforma, el simulador lo dice en vez
+    // de mostrar respuestas que por WhatsApp nunca se enviarían.
+    const clinica = await this.prisma.clinic.findUnique({ where: { id: clinicId }, select: { entitlements: true } });
+    if (!agenteHabilitado(clinica?.entitlements)) {
+      return {
+        session_id: session_id ?? null,
+        response: 'El agente está desactivado para esta clínica desde la plataforma. Escríbenos para activarlo.',
+        current_step: null,
+        intention: null,
+        certainty: null,
+        tools_used: [],
+      };
+    }
 
     let conversation;
 

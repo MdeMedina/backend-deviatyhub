@@ -6,7 +6,7 @@ import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
-import { explicarSinHoras, normalizarRut } from '@deviaty/shared-utils';
+import { explicarSinHoras, normalizarRut, accionDelAgenteHabilitada } from '@deviaty/shared-utils';
 import { IntentionClassifier, Intent } from './intention.classifier';
 import { StateManager, ConversationStep } from './state.manager';
 import { AvailabilityTool } from '../tools/availability.tool';
@@ -539,8 +539,17 @@ export class BrainService {
     const mode = (agentConfig as any)?.mode ?? 'AUTONOMOUS';
     const supervised = mode === 'SUPERVISED';
 
+    // Lo que la plataforma le permite a la clínica manda sobre su propio ajuste:
+    // una acción bloqueada desde el backoffice no se expone aunque la clínica
+    // la tenga encendida.
+    const accesosClinica = (
+      await this.prisma.clinic.findUnique({ where: { id: params.clinicId }, select: { entitlements: true } })
+    )?.entitlements;
+
     const isActionEnabled = (key: string) =>
-      !supervised && actions?.[key]?.active !== false; // por defecto habilitado si no está configurado
+      !supervised &&
+      actions?.[key]?.active !== false && // por defecto habilitado si no está configurado
+      accionDelAgenteHabilitada(accesosClinica, key);
 
     // Sin este aviso el modelo prometería agendar aunque no tenga la herramienta.
     const supervisedBlock = supervised

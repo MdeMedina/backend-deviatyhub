@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, Logger } from '@nestjs/common';
 import { PrismaService, Prisma } from '@deviaty/shared-prisma';
-import { encryptAES256, decryptAES256 } from '@deviaty/shared-utils';
+import { encryptAES256, decryptAES256, ACCIONES_AGENTE, accionDelAgenteHabilitada, agenteHabilitado } from '@deviaty/shared-utils';
 import {
   UpdateClinicConfigDto,
   UpdateSchedulesDto,
@@ -227,6 +227,7 @@ export class ClinicService {
       actions: config.actions,
       mode: config.mode,
       updated_at: config.updatedAt,
+      platform: await this.bloqueosDePlataforma(clinicId),
     };
   }
 
@@ -260,6 +261,20 @@ export class ClinicService {
       actions: config.actions,
       mode: config.mode,
       updated_at: config.updatedAt,
+      platform: await this.bloqueosDePlataforma(clinicId),
+    };
+  }
+
+  /**
+   * Lo que el backoffice le tiene bloqueado al agente de esta clínica. El
+   * panel lo muestra con candado: la clínica no lo puede encender.
+   */
+  private async bloqueosDePlataforma(clinicId: string) {
+    const clinica = await this.prisma.clinic.findUnique({ where: { id: clinicId }, select: { entitlements: true } });
+    const e = clinica?.entitlements;
+    return {
+      agent_enabled: agenteHabilitado(e),
+      actions: Object.fromEntries(ACCIONES_AGENTE.map((a) => [a, accionDelAgenteHabilitada(e, a)])),
     };
   }
 

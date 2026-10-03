@@ -2,7 +2,7 @@ import { Module, OnModuleInit, Inject } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import { FastifyInstance } from 'fastify';
 import fastifyReplyFrom from '@fastify/reply-from';
-import { verifyJWT } from '@deviaty/shared-utils';
+import { verifyJWT, moduloDeRuta } from '@deviaty/shared-utils';
 import { PROXY_CONFIG } from './proxy.config';
 
 // Rutas del backoffice: solo para superusuarios de la plataforma.
@@ -53,6 +53,7 @@ export class ProxyModule implements OnModuleInit {
         let isSuperadmin = 'false';
         let platformAdmin = false;
         let actuandoComoClinica = false;
+        let modulos: Record<string, boolean> | undefined;
 
         if (jwtToken) {
           try {
@@ -63,6 +64,7 @@ export class ProxyModule implements OnModuleInit {
             userId = payload.userId;
             isSuperadmin = String(payload.role === 'SUPERADMIN');
             platformAdmin = payload.platformAdmin === true;
+            modulos = payload.modules;
 
             // Un superusuario de la plataforma puede trabajar dentro de otra
             // clínica: el backoffice manda la clínica en x-act-as-clinic y
@@ -121,6 +123,18 @@ export class ProxyModule implements OnModuleInit {
           reply.status(409).send({
             success: false,
             error: { code: 'CLINIC_REQUIRED', message: 'Elige una clínica en el backoffice para trabajar en ella.' },
+          });
+          return;
+        }
+
+        // Módulo bloqueado por la plataforma para esta clínica. El menú ya no lo
+        // muestra, pero el bloqueo de verdad es este. (El equipo de la
+        // plataforma, dentro de una clínica, pasa: está para administrarla.)
+        const modulo = moduloDeRuta(urlPath);
+        if (modulo && !platformAdmin && modulos?.[modulo] === false) {
+          reply.status(403).send({
+            success: false,
+            error: { code: 'MODULE_DISABLED', message: 'Esta sección no está habilitada para tu clínica.' },
           });
           return;
         }
