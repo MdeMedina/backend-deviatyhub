@@ -127,6 +127,12 @@ export class ProxyModule implements OnModuleInit {
           return;
         }
 
+        // Rutas internas entre servicios: no se exponen por el gateway.
+        if (urlPath.startsWith('/api/agent/internal')) {
+          reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'No encontrado' } });
+          return;
+        }
+
         // Módulo bloqueado por la plataforma para esta clínica. El menú ya no lo
         // muestra, pero el bloqueo de verdad es este. (El equipo de la
         // plataforma, dentro de una clínica, pasa: está para administrarla.)

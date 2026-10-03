@@ -15,6 +15,7 @@ export enum AppointmentStatusDto {
   RESCHEDULED = 'RESCHEDULED',
   CANCELLED = 'CANCELLED',
   COMPLETED = 'COMPLETED',
+  NO_SHOW = 'NO_SHOW',
 }
 
 export enum AppointmentSourceDto {

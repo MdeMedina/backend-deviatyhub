@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsIn, IsObject, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEmail, IsIn, IsNumber, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateClinicDto {
   @IsString()
@@ -87,4 +87,18 @@ export class WhatsAppOwnDto {
   @IsOptional()
   @IsString()
   access_token?: string;
+}
+
+/** Condiciones comerciales y línea base. Todo opcional: se guarda lo que venga; null borra. */
+export class CommercialDto {
+  @IsOptional() @IsNumber() @Min(0) monthlyFeeUsd?: number;
+  @IsOptional() @IsNumber() @Min(0) avgTicket?: number | null;
+  @IsOptional() @IsString() @MaxLength(3) currency?: string;
+  @IsOptional() @IsNumber() @Min(0.0001) usdRate?: number;
+  @IsOptional() @IsDateString() pilotStartedAt?: string | null;
+  @IsOptional() @IsNumber() @Min(0) weeklyAppointments?: number | null;
+  @IsOptional() @IsNumber() @Min(0) @Max(1) noShowRate?: number | null;
+  @IsOptional() @IsNumber() @Min(0) lostConsultationsWeek?: number | null;
+  @IsOptional() @IsNumber() @Min(0) firstResponseTimeSec?: number | null;
+  @IsOptional() @IsNumber() @Min(0) receptionHoursWeek?: number | null;
 }

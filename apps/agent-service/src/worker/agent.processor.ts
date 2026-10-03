@@ -6,6 +6,7 @@ import { BrainService } from '../brain/brain.service';
 import { EventBus } from '@deviaty/shared-events';
 import { EnrutadorDeClinica, numeroDeDestino } from './clinic-router';
 import { agenteHabilitado } from '@deviaty/shared-utils';
+import type { UsoDelTurno } from '../brain/usage';
 
 /**
  * Corta-bucles.
@@ -90,8 +91,53 @@ export class AgentProcessor extends WorkerHost {
       .catch((e) => this.logger.warn(`No se pudo notificar el mensaje: ${(e as Error).message}`));
   }
 
+  /**
+   * Telemetría de un turno. Nunca interrumpe el flujo: si no se puede guardar,
+   * el paciente igual recibe su respuesta.
+   */
+  private async registrarTurno(t: {
+    clinicId: string;
+    conversationId?: string;
+    channel: string;
+    outcome: 'replied' | 'paused' | 'blocked' | 'takeover' | 'loop' | 'error';
+    intent?: string;
+    usage?: UsoDelTurno;
+    enviadoPorPaciente?: number | null;
+    encolado?: number;
+    inicio: number;
+    webhookMs?: number | null;
+    error?: string;
+  }) {
+    const ahora = Date.now();
+    await this.prisma.agentTurn
+      .create({
+        data: {
+          clinicId: t.clinicId,
+          conversationId: t.conversationId ?? null,
+          channel: t.channel,
+          outcome: t.outcome,
+          intent: t.intent ?? null,
+          model: t.usage?.model ?? null,
+          promptTokens: t.usage?.promptTokens ?? 0,
+          completionTokens: t.usage?.completionTokens ?? 0,
+          costUsd: t.usage?.costUsd ?? 0,
+          llmMs: t.usage?.llmMs ?? null,
+          parseError: t.usage?.parseError ?? false,
+          // La marca de Meta va en segundos: la latencia de punta a punta tiene
+          // ±1 s de precisión, suficiente para metas de 4 y 12 segundos.
+          endToEndMs: t.outcome === 'replied' && t.enviadoPorPaciente ? Math.max(0, ahora - t.enviadoPorPaciente) : null,
+          queueMs: t.encolado ? Math.max(0, t.inicio - t.encolado) : null,
+          webhookMs: t.webhookMs ?? null,
+          error: t.error?.slice(0, 500) ?? null,
+        },
+      })
+      .catch((e) => this.logger.warn(`No se pudo guardar la telemetría del turno: ${(e as Error).message}`));
+  }
+
   async process(job: Job<any, any, string>): Promise<any> {
     let data = job.data;
+    const inicio = Date.now();
+    const webhookMs: number | null = typeof job.data?.webhookMs === 'number' ? job.data.webhookMs : null;
 
     // El webhook encola el payload CRUDO de Meta ({ channel, payload }).
     // Lo normalizamos aquí: parsear el mensaje, resolver/crear contacto y
@@ -107,6 +153,15 @@ export class AgentProcessor extends WorkerHost {
 
     const { contact_id, message, clinic_id, conversation_id, user_message_id } = data;
     this.logger.log(`🤖 Procesando mensaje para contacto ${contact_id} en clínica ${clinic_id}`);
+    const turno = {
+      clinicId: clinic_id,
+      conversationId: conversation_id,
+      channel: 'WHATSAPP',
+      enviadoPorPaciente: data.sent_at_ms ?? null,
+      encolado: job.timestamp,
+      inicio,
+      webhookMs,
+    };
 
     try {
       // 1. Cargar contexto de la conversación
@@ -126,9 +181,12 @@ export class AgentProcessor extends WorkerHost {
         return;
       }
 
+      turno.channel = String(conversation.channel || 'WHATSAPP');
+
       // Si está en takeover humano, ignorar
       if (conversation.status === 'HUMAN_TAKEOVER') {
         this.logger.warn(`Conversación ${conversation_id} está en HUMAN_TAKEOVER. Ignorando.`);
+        await this.registrarTurno({ ...turno, outcome: 'takeover' });
         return;
       }
 
@@ -142,6 +200,7 @@ export class AgentProcessor extends WorkerHost {
         this.logger.warn(
           `Agente en PAUSA para la clínica ${clinic_id}. No se responde a ${conversation_id}.`,
         );
+        await this.registrarTurno({ ...turno, outcome: 'paused' });
         return;
       }
 
@@ -158,6 +217,7 @@ export class AgentProcessor extends WorkerHost {
         this.logger.warn(
           `Agente bloqueado por la plataforma para la clínica ${clinic_id} (canal ${canal}). No se responde a ${conversation_id}.`,
         );
+        await this.registrarTurno({ ...turno, outcome: 'blocked' });
         return;
       }
 
@@ -205,6 +265,7 @@ export class AgentProcessor extends WorkerHost {
           },
         });
         await this.notifyMessage(conversation_id, aviso);
+        await this.registrarTurno({ ...turno, outcome: 'loop' });
         return;
       }
 
@@ -267,8 +328,10 @@ export class AgentProcessor extends WorkerHost {
       });
 
       this.logger.log(`Respuesta enviada y persistida para ${conversation_id}`);
+      await this.registrarTurno({ ...turno, outcome: 'replied', intent: response.intent, usage: response.usage });
     } catch (error) {
       this.logger.error(`Error procesando mensaje: ${(error as Error).message}`);
+      await this.registrarTurno({ ...turno, outcome: 'error', error: (error as Error).message });
       throw error; // Para que BullMQ reintente según config
     }
   }
@@ -288,6 +351,7 @@ export class AgentProcessor extends WorkerHost {
     clinic_id: string;
     conversation_id: string;
     user_message_id: string;
+    sent_at_ms: number | null;
   } | null> {
     const value = payload?.entry?.[0]?.changes?.[0]?.value;
     const msg = value?.messages?.[0];
@@ -358,6 +422,8 @@ export class AgentProcessor extends WorkerHost {
       clinic_id,
       conversation_id: conversation.id,
       user_message_id: userMessage.id,
+      // Cuándo lo envió el paciente según Meta (en segundos).
+      sent_at_ms: Number(msg.timestamp) > 0 ? Number(msg.timestamp) * 1000 : null,
     };
   }
 }

@@ -75,6 +75,7 @@ server.get('/webhook/whatsapp', async (request, reply) => {
  * Endpoint de recepción de eventos (POST)
  */
 server.post('/webhook/whatsapp', { config: { rawBody: true } }, async (request, reply) => {
+  const llegada = Date.now();
   const signature = request.headers['x-hub-signature-256'] as string;
   const body = (request as any).rawBody;
 
@@ -91,7 +92,9 @@ server.post('/webhook/whatsapp', { config: { rawBody: true } }, async (request, 
     server.log.info(`Webhook con ${mensajes.length} mensaje(s), encolando...`);
 
     for (const unMensaje of mensajes) {
-      await enqueueMessage('whatsapp', unMensaje);
+      // Lo que lleva el webhook desde que llegó la petición: Meta descarta los
+      // que tardan más de unos segundos en responder.
+      await enqueueMessage('whatsapp', unMensaje, Date.now() - llegada);
     }
     
     return reply.status(200).send('EVENT_RECEIVED');

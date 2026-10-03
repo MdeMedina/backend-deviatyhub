@@ -26,10 +26,11 @@ export const messageQueue = new Queue('messages', {
  * @param channel Canal de origen ('whatsapp' | 'instagram')
  * @param payload El JSON crudo recibido del webhook
  */
-export async function enqueueMessage(channel: string, payload: any) {
+export async function enqueueMessage(channel: string, payload: any, webhookMs?: number) {
   await messageQueue.add('process_webhook', {
     channel,
     payload,
     receivedAt: new Date().toISOString(),
+    webhookMs,
   });
 }

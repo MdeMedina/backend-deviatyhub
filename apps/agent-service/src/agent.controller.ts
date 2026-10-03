@@ -1,11 +1,16 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   Inject,
   BadRequestException,
+  ForbiddenException,
+  Headers,
   Logger,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { CurrentClinicId } from '@deviaty/shared-nestjs';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { BrainService } from './brain/brain.service';
@@ -20,7 +25,33 @@ export class AgentController {
     private readonly prisma: PrismaService,
     @Inject(BrainService)
     private readonly brain: BrainService,
+    @InjectQueue('messages')
+    private readonly cola: Queue,
   ) {}
+
+  /**
+   * Estado de la cola de mensajes entrantes, para el backoffice. Lo consulta
+   * core por la red interna; el gateway corta /api/agent/internal a todo el
+   * mundo, y la cabecera de superusuario es una segunda llave.
+   */
+  @Get('internal/queue')
+  async estadoDeLaCola(@Headers('x-platform-admin') platformAdmin?: string) {
+    if (platformAdmin !== 'true') throw new ForbiddenException();
+    const [conteo, esperando, fallidos] = await Promise.all([
+      this.cola.getJobCounts('waiting', 'active', 'delayed', 'failed', 'completed'),
+      this.cola.getJobs(['waiting'], 0, 0, true),
+      this.cola.getJobs(['failed'], 0, 199, false),
+    ]);
+    const hace24h = Date.now() - 24 * 60 * 60 * 1000;
+    return {
+      waiting: conteo.waiting ?? 0,
+      active: conteo.active ?? 0,
+      delayed: conteo.delayed ?? 0,
+      depth: (conteo.waiting ?? 0) + (conteo.active ?? 0) + (conteo.delayed ?? 0),
+      oldest_waiting_age_sec: esperando[0] ? Math.round((Date.now() - esperando[0].timestamp) / 1000) : 0,
+      failed_last_24h: fallidos.filter((j) => (j.finishedOn ?? j.timestamp) >= hace24h).length,
+    };
+  }
 
   @Post('simulate')
   async simulate(
@@ -124,6 +155,26 @@ export class AgentController {
       metadata: conversation.metadata || {},
       simulate: true,
     });
+
+    // Telemetría: también cuesta tokens, aunque no se envíe a nadie.
+    await this.prisma.agentTurn
+      .create({
+        data: {
+          clinicId,
+          conversationId: conversation.id,
+          channel: 'SIMULATOR',
+          simulated: true,
+          outcome: 'replied',
+          intent: response.intent,
+          model: response.usage?.model ?? null,
+          promptTokens: response.usage?.promptTokens ?? 0,
+          completionTokens: response.usage?.completionTokens ?? 0,
+          costUsd: response.usage?.costUsd ?? 0,
+          llmMs: response.usage?.llmMs ?? null,
+          parseError: response.usage?.parseError ?? false,
+        },
+      })
+      .catch(() => undefined);
 
     // 4. Save agent response to BDD
     await this.prisma.message.create({

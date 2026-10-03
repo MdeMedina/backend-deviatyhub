@@ -106,6 +106,8 @@ services:
     environment:
       # Enlace de invitación que el backoffice muestra al dar de alta una clínica.
       - FRONTEND_URL=${FRONTEND_URL:-https://app.dentral.cl}
+      # Estado de la cola de mensajes para el backoffice (red interna).
+      - AGENT_SERVICE_URL=http://agent-service:3003
       # Para distinguir en "Equipo Dentral" el acceso fijado en el servidor.
       - PLATFORM_ADMIN_EMAILS=${PLATFORM_ADMIN_EMAILS:-}
       # Para mostrar en el backoffice qué clínica usa el número global de WhatsApp.

@@ -64,7 +64,7 @@ export class ReminderService implements OnModuleInit, OnModuleDestroy {
 
     const citas = await this.prisma.appointment.findMany({
       where: {
-        status: { notIn: ['CANCELLED', 'COMPLETED'] },
+        status: { notIn: ['CANCELLED', 'COMPLETED', 'NO_SHOW'] },
         scheduledAt: { gt: ahora, lte: masLejano },
         createdAt: { lt: margen },
       },

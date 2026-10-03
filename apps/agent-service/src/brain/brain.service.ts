@@ -3,6 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
+import { MedidorDeUso, sumarUso, type UsoDelTurno } from './usage';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
@@ -19,6 +20,7 @@ import { format } from 'date-fns';
 export class BrainService {
   private readonly logger = new Logger(BrainService.name);
   private model: ChatOpenAI;
+  private readonly nombreModelo: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -30,6 +32,7 @@ export class BrainService {
     private readonly actionsTool: AppointmentActionsTool,
   ) {
     const modelo = this.configService.get<string>('OPENAI_MODEL') || 'gpt-4o-mini';
+    this.nombreModelo = modelo;
     this.model = new ChatOpenAI({
       openAIApiKey: this.configService.get('OPENAI_API_KEY'),
       // Modelo del agente. Configurable porque es la palanca más directa contra
@@ -69,7 +72,7 @@ export class BrainService {
     currentStep: string;
     metadata: any;
     simulate?: boolean;
-  }): Promise<{ text: string; currentStep: string; intent: string; certainty: number; toolsUsed: string[] }> {
+  }): Promise<{ text: string; currentStep: string; intent: string; certainty: number; toolsUsed: string[]; usage: UsoDelTurno }> {
     const nowLocal = new Date();
     const currentDate = format(nowLocal, 'yyyy-MM-dd');
     const currentTime = format(nowLocal, 'HH:mm');
@@ -221,10 +224,16 @@ export class BrainService {
       .reverse()
       .find((m: any) => String(m.role).toUpperCase() === 'ASSISTANT')?.content;
 
-    const classification = await this.classifier.classify(params.userInput, {
-      lastAgentMessage,
-      currentStep: params.currentStep,
-    });
+    // Telemetría del turno: tokens, costo y tiempo dentro del modelo.
+    const medidorClasificador = new MedidorDeUso(this.classifier.nombreModelo);
+    const medidorAgente = new MedidorDeUso(this.nombreModelo);
+    let salidaIlegible = false;
+
+    const classification = await this.classifier.classify(
+      params.userInput,
+      { lastAgentMessage, currentStep: params.currentStep },
+      [medidorClasificador],
+    );
 
     // Con un agendamiento a medias, el paciente está contestando algo concreto.
     // Derivarle por baja confianza rompe el flujo justo cuando más avanzado
@@ -914,7 +923,7 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
       supervisedBlock,
       ambiguityBlock,
       especialistasBlock,
-    });
+    }, { callbacks: [medidorAgente] });
 
     const toolsUsed: string[] = Array.isArray((response as any).intermediateSteps)
       ? (response as any).intermediateSteps
@@ -1035,6 +1044,7 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
       
     } catch (e) {
       this.logger.warn(`No se pudo parsear el output de la IA como JSON estructurado: ${response.output}`);
+      salidaIlegible = true;
     }
 
     // 6. Post-procesamiento: Actualizar Estado si no hubo escalada
@@ -1290,6 +1300,7 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
       intent: classification.intent,
       certainty: classification.confidence,
       toolsUsed,
+      usage: sumarUso(this.nombreModelo, [medidorClasificador, medidorAgente], salidaIlegible),
     };
   }
 

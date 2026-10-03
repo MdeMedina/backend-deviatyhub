@@ -59,7 +59,11 @@ enum AppointmentStatus {
   CONFIRMED
   RESCHEDULED
   CANCELLED
+  /// Asistió. Lo marca la clínica en la agenda: no hay integración con su
+  /// sistema de fichas que lo traiga solo.
   COMPLETED
+  /// No asistió y no avisó.
+  NO_SHOW
 }
 
 enum AppointmentSource {
@@ -94,6 +98,8 @@ model Clinic {
   /// verdad: no aparece en el backoffice ni atiende pacientes.
   internal     Boolean    @default(false)
   billingEmail String     @map("billing_email")
+  commercial   ClinicCommercial?
+  agentTurns   AgentTurn[]
   /// Lo que la plataforma le habilita (módulos del panel, agente, canales,
   /// acciones, recordatorios). Solo se edita desde el backoffice. Vacío =
   /// todo permitido. Ver accesos.util en shared-utils.
@@ -643,4 +649,72 @@ model ClinicKnowledgeOverride {
 
   @@index([clinicId, active])
   @@map("clinic_knowledge_overrides")
+}
+
+// ─────────────────────────────────────────
+// MÉTRICAS DE IMPACTO Y TELEMETRÍA
+// ─────────────────────────────────────────
+
+/// Condiciones comerciales y línea base de una clínica. La carga el equipo de
+/// la plataforma en el backoffice antes del piloto. Sin esto no hay ingreso
+/// estimado ni garantía que calcular: ambos dependen del ticket promedio.
+model ClinicCommercial {
+  id                    String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId              String    @unique @map("clinic_id") @db.Uuid
+  /// Mensualidad en USD (99 por sucursal).
+  monthlyFeeUsd         Float     @default(99) @map("monthly_fee_usd")
+  /// Ticket promedio de primera consulta o tratamiento, en la moneda de la clínica.
+  avgTicket             Float?    @map("avg_ticket")
+  currency              String    @default("CLP")
+  /// Cuántas unidades de la moneda local vale 1 USD. Convierte la mensualidad
+  /// para compararla con el ingreso de la clínica.
+  usdRate               Float     @default(950) @map("usd_rate")
+  pilotStartedAt        DateTime? @map("pilot_started_at") @db.Timestamptz
+  // Línea base previa al piloto (semanas -2 a 0, sacada de su sistema de fichas).
+  weeklyAppointments    Float?    @map("weekly_appointments")
+  /// 0.25 = 25 %.
+  noShowRate            Float?    @map("no_show_rate")
+  lostConsultationsWeek Int?      @map("lost_consultations_week")
+  firstResponseTimeSec  Int?      @map("first_response_time_sec")
+  receptionHoursWeek    Float?    @map("reception_hours_week")
+  updatedAt             DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@map("clinic_commercials")
+}
+
+/// Un turno del agente: un mensaje del paciente y lo que pasó con él. Es la
+/// telemetría de la plataforma: latencia, cola, tokens, costo y desenlace.
+model AgentTurn {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId         String    @map("clinic_id") @db.Uuid
+  conversationId   String?   @map("conversation_id") @db.Uuid
+  channel          String
+  simulated        Boolean   @default(false)
+  /// replied | paused | blocked | takeover | loop | error
+  outcome          String
+  intent           String?
+  model            String?
+  promptTokens     Int       @default(0) @map("prompt_tokens")
+  completionTokens Int       @default(0) @map("completion_tokens")
+  costUsd          Float     @default(0) @map("cost_usd")
+  /// Tiempo dentro del modelo (clasificador + agente).
+  llmMs            Int?      @map("llm_ms")
+  /// Desde que el paciente envió el mensaje (marca de Meta) hasta que salió la respuesta.
+  endToEndMs       Int?      @map("end_to_end_ms")
+  /// Espera en la cola de BullMQ.
+  queueMs          Int?      @map("queue_ms")
+  /// Lo que tardó el webhook en aceptar el mensaje de Meta.
+  webhookMs        Int?      @map("webhook_ms")
+  /// El modelo devolvió algo que no era el JSON esperado.
+  parseError       Boolean   @default(false) @map("parse_error")
+  error            String?
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@index([clinicId, createdAt])
+  @@index([createdAt])
+  @@map("agent_turns")
 }

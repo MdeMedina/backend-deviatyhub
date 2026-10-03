@@ -29,10 +29,13 @@ export interface IntentResult {
 export class IntentionClassifier {
   private readonly logger = new Logger(IntentionClassifier.name);
   private model: ChatOpenAI;
+  /** Para atribuir el costo del clasificador a su modelo, que puede no ser el del agente. */
+  readonly nombreModelo: string;
   private parser: JsonOutputParser<IntentResult>;
 
   constructor(private readonly configService: ConfigService) {
     const modelo = this.configService.get<string>('OPENAI_CLASSIFIER_MODEL') || 'gpt-4o-mini';
+    this.nombreModelo = modelo;
     this.model = new ChatOpenAI({
       openAIApiKey: this.configService.get('OPENAI_API_KEY'),
       // El clasificador puede ir en un modelo más barato que el agente: su salida
@@ -61,6 +64,7 @@ export class IntentionClassifier {
   async classify(
     text: string,
     context?: { lastAgentMessage?: string; currentStep?: string },
+    callbacks?: any[],
   ): Promise<IntentResult> {
     const contextBlock =
       context?.lastAgentMessage || context?.currentStep
@@ -111,7 +115,7 @@ export class IntentionClassifier {
     const chain = prompt.pipe(this.model as any).pipe(this.parser as any);
 
     try {
-      const result = await chain.invoke({ text, contextBlock }) as IntentResult;
+      const result = await chain.invoke({ text, contextBlock }, { callbacks }) as IntentResult;
       this.logger.log(`Intención detectada: ${result.intent} (${Math.round(result.confidence * 100)}%)`);
       return result;
     } catch (error) {
