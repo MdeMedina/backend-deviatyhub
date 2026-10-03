@@ -25,6 +25,11 @@ export class PlatformController {
     return this.platform.inviteTeamMember(dto.email);
   }
 
+  @Post('team/:userId/resend-invite')
+  resendTeamInvite(@Param('userId', ParseUUIDPipe) userId: string) {
+    return this.platform.resendTeamInvite(userId);
+  }
+
   @Delete('team/:userId')
   revokeTeamMember(@Param('userId', ParseUUIDPipe) userId: string, @CurrentUserId() actual: string) {
     return this.platform.revokeTeamMember(userId, actual);

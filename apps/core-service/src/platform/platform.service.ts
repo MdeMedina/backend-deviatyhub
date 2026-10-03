@@ -468,6 +468,15 @@ export class PlatformService {
     return this.listTeam(usuarioActual);
   }
 
+  /** Nueva invitación para un superusuario que todavía no ha puesto contraseña. */
+  async resendTeamInvite(userId: string) {
+    const usuario = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!usuario || !(usuario.platformAdmin || this.correosDelServidor().includes(usuario.email.toLowerCase()))) {
+      throw new NotFoundException('Ese usuario no es parte del equipo.');
+    }
+    return this.resendInvite(usuario.clinicId, usuario.id);
+  }
+
   /** La clínica interna y su rol, creados la primera vez que hacen falta. */
   private async clinicaInterna(): Promise<{ clinicId: string; roleId: string }> {
     let clinica = await this.prisma.clinic.findFirst({ where: { internal: true }, orderBy: { createdAt: 'asc' } });
