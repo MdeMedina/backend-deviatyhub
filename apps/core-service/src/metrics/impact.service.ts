@@ -84,9 +84,7 @@ export class ImpactService {
       this.citasFueraDeHorario(clinicId, from, to),
       this.tiempoDePrimeraRespuesta(clinicId, from, to),
       this.autonomia(clinicId, from, to),
-      this.prisma.message.count({
-        where: { clinicId, role: 'ASSISTANT', sentAt: { gte: from, lt: to }, conversation: { channel: { not: 'SIMULATOR' } } },
-      }),
+      this.mensajesUtilesDelAgente(clinicId, from, to),
     ]);
 
     const horasAhorradas = Math.round(((mensajesAgente * MINUTOS_POR_MENSAJE) / 60) * 10) / 10;
@@ -248,6 +246,38 @@ export class ImpactService {
     `;
     const p50 = filas?.[0]?.p50;
     return { p50: p50 == null ? null : Math.round(p50 * 10) / 10 };
+  }
+
+  /**
+   * Respuestas del agente que ahorraron trabajo a recepción. Se excluyen las
+   * conversaciones con otro bot, no con pacientes: las que cortó el
+   * corta-bucles y las que superaron su umbral (40 respuestas en una hora)
+   * antes de que existiera. Una sola, el 29/09, sumó 864 respuestas, que
+   * contadas como "horas ahorradas" daban 36 horas falsas.
+   */
+  private async mensajesUtilesDelAgente(clinicId: string, from: Date, to: Date) {
+    const filas = await this.prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT COUNT(*) AS n
+      FROM messages m
+      JOIN conversations c ON c.id = m.conversation_id
+      WHERE m.clinic_id = ${clinicId}::uuid
+        AND m.role = 'ASSISTANT'
+        AND m.sent_at >= ${from} AND m.sent_at < ${to}
+        AND c.channel <> 'SIMULATOR'
+        AND NOT EXISTS (
+          SELECT 1 FROM messages s
+          WHERE s.conversation_id = m.conversation_id
+            AND s.role = 'SYSTEM'
+            AND s.content LIKE 'El agente dejó de responder automáticamente%'
+        )
+        AND m.conversation_id NOT IN (
+          SELECT b.conversation_id FROM messages b
+          WHERE b.clinic_id = ${clinicId}::uuid AND b.role = 'ASSISTANT'
+          GROUP BY b.conversation_id, date_trunc('hour', b.sent_at)
+          HAVING COUNT(*) > 40
+        )
+    `;
+    return Number(filas?.[0]?.n ?? 0);
   }
 
   /** Conversaciones del periodo resueltas sin que interviniera una persona. */
