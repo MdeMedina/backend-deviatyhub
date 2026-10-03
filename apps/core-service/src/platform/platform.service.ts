@@ -210,8 +210,9 @@ export class PlatformService {
         doctor: u.doctor?.name ?? null,
         platform_admin: u.platformAdmin,
         created_at: u.createdAt,
-        // Sin contraseña todavía: la invitación sigue pendiente.
-        invite_pending: !u.passwordHash,
+        // Sin contraseña todavía: la invitación sigue pendiente (si la cuenta
+        // no se quitó; una desactivada ya no tiene invitación que valga).
+        invite_pending: !u.passwordHash && u.active !== false,
         invite_expires: u.passwordHash ? null : u.inviteExpires,
       })),
     };
@@ -464,7 +465,7 @@ export class PlatformService {
       from_backoffice: u.platformAdmin,
       // Si su cuenta vive en una clínica de verdad, también trabaja en ella.
       clinic: u.clinic?.internal ? null : u.clinic?.name ?? null,
-      invite_pending: !u.passwordHash,
+      invite_pending: !u.passwordHash && u.active !== false,
       invite_expires: u.passwordHash ? null : u.inviteExpires,
       created_at: u.createdAt,
     }));

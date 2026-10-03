@@ -203,9 +203,12 @@ export class UsersService {
 
   async remove(id: string, clinicId: string) {
     this.logger.log(`remove - userId: ${id}, clinicId: ${clinicId}`);
+    // Se desactiva (no se borra: queda su rastro en conversaciones y auditoría)
+    // y se anula la invitación: si no, el enlace seguía sirviendo para crear
+    // una contraseña en una cuenta que ya se había quitado.
     return this.prisma.user.update({
       where: { id, clinicId },
-      data: { active: false },
+      data: { active: false, inviteToken: null, inviteExpires: null },
     });
   }
 }

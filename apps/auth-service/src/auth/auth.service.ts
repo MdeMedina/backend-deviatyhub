@@ -216,6 +216,11 @@ export class AuthService {
       throw new BadRequestException('TOKEN_NOT_FOUND');
     }
 
+    if (user.active === false) {
+      this.logger.warn(`setPassword - Invite for deactivated user: ${user.id}`);
+      throw new BadRequestException('TOKEN_NOT_FOUND');
+    }
+
     if (user.inviteExpires && user.inviteExpires < new Date()) {
       this.logger.warn(`setPassword - Invite token expired for user: ${user.id}`);
       throw new BadRequestException('TOKEN_EXPIRED');
