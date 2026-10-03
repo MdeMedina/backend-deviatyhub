@@ -52,6 +52,7 @@ export class ProxyModule implements OnModuleInit {
         let userId: string | undefined;
         let isSuperadmin = 'false';
         let platformAdmin = false;
+        let actuandoComoClinica = false;
 
         if (jwtToken) {
           try {
@@ -70,6 +71,7 @@ export class ProxyModule implements OnModuleInit {
             const actuarComo = String(req.headers['x-act-as-clinic'] || '').trim();
             if (platformAdmin && UUID.test(actuarComo)) {
               clinicId = actuarComo;
+              actuandoComoClinica = true;
             }
             // Dentro de cualquier clínica, el equipo de la plataforma tiene
             // los permisos del dueño: está ahí para administrarla.
@@ -105,6 +107,20 @@ export class ProxyModule implements OnModuleInit {
           reply.status(403).send({
             success: false,
             error: { code: 'FORBIDDEN', message: 'Solo para el equipo de la plataforma' },
+          });
+          return;
+        }
+
+        // El equipo de la plataforma no tiene clínica propia: su cuenta vive en
+        // una por exigencia del modelo de datos, pero no es la suya. Sin elegir
+        // una, las rutas de clínica se rechazan en vez de servirle los datos de
+        // esa (y dejarle cambiarlos sin darse cuenta). Quedan abiertas su sesión
+        // y el backoffice.
+        const rutaDeSesion = urlPath.startsWith('/api/auth/') && !urlPath.startsWith('/api/auth/users') && !urlPath.startsWith('/api/auth/roles');
+        if (platformAdmin && !actuandoComoClinica && !rutaDeSesion && !urlPath.startsWith(PLATFORM_PREFIX)) {
+          reply.status(409).send({
+            success: false,
+            error: { code: 'CLINIC_REQUIRED', message: 'Elige una clínica en el backoffice para trabajar en ella.' },
           });
           return;
         }
