@@ -156,7 +156,18 @@ export class AuthService {
    * La plataforma puede cortarle la entrada a una clínica entera desde el
    * backoffice (clinics.active = false). El equipo de la plataforma entra igual.
    */
-  private comprobarAccesoDeClinica(user: { email: string; platformAdmin?: boolean | null; clinic?: { active: boolean | null } | null }) {
+  private comprobarAccesoDeClinica(user: {
+    email: string;
+    active?: boolean | null;
+    platformAdmin?: boolean | null;
+    clinic?: { active: boolean | null } | null;
+  }) {
+    // Una cuenta desactivada no entra, sea de quien sea. Antes el login no lo
+    // miraba: desactivar a alguien en "Usuarios" no le impedía iniciar sesión.
+    if (user.active === false) {
+      this.logger.warn(`Entrada bloqueada: la cuenta ${user.email} está desactivada.`);
+      throw new ForbiddenException('Tu cuenta está desactivada. Pide al administrador de tu clínica que la reactive.');
+    }
     if (esAdminDePlataforma(user)) return;
     if (user.clinic?.active === false) {
       this.logger.warn(`Entrada bloqueada: la clínica de ${user.email} está suspendida.`);

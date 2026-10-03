@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Inject, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { CurrentUserId } from '@deviaty/shared-nestjs';
 import { PlatformAdminGuard } from './platform.guard';
 import { PlatformService } from './platform.service';
 import { CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto } from './dto/platform.dto';
@@ -12,6 +13,21 @@ export class PlatformController {
   @Get('overview')
   overview() {
     return this.platform.overview();
+  }
+
+  @Get('team')
+  listTeam(@CurrentUserId() userId: string) {
+    return this.platform.listTeam(userId);
+  }
+
+  @Post('team')
+  inviteTeamMember(@Body() dto: InviteClinicUserDto) {
+    return this.platform.inviteTeamMember(dto.email);
+  }
+
+  @Delete('team/:userId')
+  revokeTeamMember(@Param('userId', ParseUUIDPipe) userId: string, @CurrentUserId() actual: string) {
+    return this.platform.revokeTeamMember(userId, actual);
   }
 
   @Get('clinics')

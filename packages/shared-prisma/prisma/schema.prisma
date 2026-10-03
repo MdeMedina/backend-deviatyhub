@@ -89,6 +89,10 @@ model Clinic {
   slug         String     @unique
   plan         ClinicPlan @default(STARTER)
   active       Boolean?   @default(true)
+  /// Clínica interna de la plataforma: aloja las cuentas del equipo Dentral
+  /// (cada usuario tiene que pertenecer a una clínica). No es una clínica de
+  /// verdad: no aparece en el backoffice ni atiende pacientes.
+  internal     Boolean    @default(false)
   billingEmail String     @map("billing_email")
   /// Lo que la plataforma le habilita (módulos del panel, agente, canales,
   /// acciones, recordatorios). Solo se edita desde el backoffice. Vacío =

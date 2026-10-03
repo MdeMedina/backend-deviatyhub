@@ -87,6 +87,7 @@ export class PlatformService {
     const [clinicas, usuarios, profesionales, conversaciones, citasAgente, ultimaActividad, whatsapp] =
       await Promise.all([
         this.prisma.clinic.findMany({
+          where: { internal: false },
           orderBy: { createdAt: 'asc' },
           include: { agentConfig: { select: { mode: true } } },
         }),
@@ -143,8 +144,8 @@ export class PlatformService {
   }
 
   async getClinic(id: string) {
-    const clinica = await this.prisma.clinic.findUnique({
-      where: { id },
+    const clinica = await this.prisma.clinic.findFirst({
+      where: { id, internal: false },
       include: {
         configs: true,
         schedules: { orderBy: { dayOfWeek: 'asc' } },
@@ -358,8 +359,8 @@ export class PlatformService {
     const hace30 = subDays(ahora, 30);
 
     const [clinicas, activas, conversaciones30, mensajesEntrantes7, citasAgente30, derivaciones30] = await Promise.all([
-      this.prisma.clinic.count(),
-      this.prisma.clinic.count({ where: { active: { not: false } } }),
+      this.prisma.clinic.count({ where: { internal: false } }),
+      this.prisma.clinic.count({ where: { internal: false, active: { not: false } } }),
       this.prisma.conversation.count({ where: { startedAt: { gte: hace30 } } }),
       this.prisma.message.count({ where: { role: 'USER', sentAt: { gte: hace7 } } }),
       this.prisma.appointment.count({ where: { source: 'AGENT', createdAt: { gte: hace30 } } }),
@@ -374,6 +375,122 @@ export class PlatformService {
       agent_appointments_30d: citasAgente30,
       human_takeovers_30d: derivaciones30,
     };
+  }
+
+  // ─── Equipo de la plataforma ─────────────────────────────────────────
+
+  /** Correos con acceso de superusuario fijado en el servidor (PLATFORM_ADMIN_EMAILS). */
+  private correosDelServidor(): string[] {
+    return String(process.env.PLATFORM_ADMIN_EMAILS || '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  async listTeam(usuarioActual?: string) {
+    const delServidor = this.correosDelServidor();
+    const miembros = await this.prisma.user.findMany({
+      where: { OR: [{ platformAdmin: true }, { email: { in: delServidor } }] },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        email: true,
+        active: true,
+        platformAdmin: true,
+        passwordHash: true,
+        inviteExpires: true,
+        createdAt: true,
+        clinic: { select: { name: true, internal: true } },
+      },
+    });
+    return miembros.map((u) => ({
+      id: u.id,
+      email: u.email,
+      active: u.active !== false,
+      is_you: u.id === usuarioActual,
+      // De dónde le viene el acceso: lo dado en el backoffice se puede quitar
+      // desde aquí; lo del servidor, solo cambiando el .env.
+      from_server: delServidor.includes(u.email.toLowerCase()),
+      from_backoffice: u.platformAdmin,
+      // Si su cuenta vive en una clínica de verdad, también trabaja en ella.
+      clinic: u.clinic?.internal ? null : u.clinic?.name ?? null,
+      invite_pending: !u.passwordHash,
+      invite_expires: u.passwordHash ? null : u.inviteExpires,
+      created_at: u.createdAt,
+    }));
+  }
+
+  /**
+   * Da acceso de superusuario. Si el correo ya tiene cuenta (p. ej. en una
+   * clínica) se le añade el acceso sin más; si no, se crea su cuenta en la
+   * clínica interna y se le invita.
+   */
+  async inviteTeamMember(emailCrudo: string) {
+    const email = emailCrudo.trim().toLowerCase();
+    const existente = await this.prisma.user.findUnique({ where: { email } });
+    if (existente) {
+      if (existente.platformAdmin) throw new ConflictException(`${email} ya es parte del equipo.`);
+      await this.prisma.user.update({ where: { id: existente.id }, data: { platformAdmin: true } });
+      this.logger.log(`Acceso de superusuario dado a una cuenta existente: ${email}.`);
+      return { email, promoted: true, invite_link: null, invite_expires: null };
+    }
+
+    const { clinicId, roleId } = await this.clinicaInterna();
+    const inviteToken = randomUUID();
+    const inviteExpires = new Date(Date.now() + DIAS_INVITACION * 24 * 60 * 60 * 1000);
+    const usuario = await this.prisma.user.create({
+      data: { email, clinicId, roleId, inviteToken, inviteExpires, active: true, platformAdmin: true },
+    });
+    await this.publicarInvitacion(usuario.id, email, clinicId, inviteToken);
+    this.logger.log(`Superusuario invitado: ${email}.`);
+    return { email, promoted: false, invite_link: this.enlaceInvitacion(inviteToken), invite_expires: inviteExpires };
+  }
+
+  async revokeTeamMember(userId: string, usuarioActual?: string) {
+    if (userId === usuarioActual) {
+      throw new BadRequestException('No puedes quitarte el acceso a ti mismo.');
+    }
+    const usuario = await this.prisma.user.findUnique({ where: { id: userId }, include: { clinic: true } });
+    if (!usuario) throw new NotFoundException('No existe ese usuario.');
+    if (this.correosDelServidor().includes(usuario.email.toLowerCase())) {
+      throw new BadRequestException(
+        `${usuario.email} tiene el acceso fijado en el servidor (PLATFORM_ADMIN_EMAILS). Se quita desde ahí.`,
+      );
+    }
+    // Una cuenta de la clínica interna no tiene nada más que hacer en la
+    // plataforma: sin el acceso se desactiva. Una de clínica de verdad sigue
+    // trabajando en su clínica.
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { platformAdmin: false, ...(usuario.clinic?.internal ? { active: false } : {}) },
+    });
+    this.logger.log(`Acceso de superusuario quitado a ${usuario.email}.`);
+    return this.listTeam(usuarioActual);
+  }
+
+  /** La clínica interna y su rol, creados la primera vez que hacen falta. */
+  private async clinicaInterna(): Promise<{ clinicId: string; roleId: string }> {
+    let clinica = await this.prisma.clinic.findFirst({ where: { internal: true }, orderBy: { createdAt: 'asc' } });
+    if (!clinica) {
+      clinica = await this.prisma.clinic.create({
+        data: {
+          name: 'Dentral (plataforma)',
+          slug: 'dentral-plataforma',
+          internal: true,
+          billingEmail: 'equipo@dentral.cl',
+          // Sin agente: aquí no hay pacientes.
+          entitlements: { agent: { enabled: false } },
+        },
+      });
+      this.logger.log(`Clínica interna de la plataforma creada: ${clinica.id}.`);
+    }
+    let rol = await this.prisma.role.findFirst({ where: { clinicId: clinica.id, name: 'Equipo Dentral' } });
+    if (!rol) {
+      rol = await this.prisma.role.create({
+        data: { clinicId: clinica.id, name: 'Equipo Dentral', isSuperadmin: false, permissions: {} },
+      });
+    }
+    return { clinicId: clinica.id, roleId: rol.id };
   }
 
   private enlaceInvitacion(token: string) {

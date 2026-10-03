@@ -106,6 +106,8 @@ services:
     environment:
       # Enlace de invitación que el backoffice muestra al dar de alta una clínica.
       - FRONTEND_URL=${FRONTEND_URL:-https://app.dentral.cl}
+      # Para distinguir en "Equipo Dentral" el acceso fijado en el servidor.
+      - PLATFORM_ADMIN_EMAILS=${PLATFORM_ADMIN_EMAILS:-}
       # Los contenedores corrían en UTC mientras la clínica opera en Santiago:
       # la disponibilidad construía los horarios con la hora del contenedor y
       # descartaba como pasada toda la tarde.
