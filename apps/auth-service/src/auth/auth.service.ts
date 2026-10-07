@@ -5,6 +5,19 @@ import { RegisterDto, LoginDto } from './dto/auth.dto';
 import { hashBcrypt, compareBcrypt, signJWT, verifyJWT, recortarPermisos, modulosDeClinica } from '@deviaty/shared-utils';
 import { IJwtPayload } from '@deviaty/shared-types';
 import { REDIS_CHANNELS, EventBus } from '@deviaty/shared-events';
+import { createHash, randomUUID } from 'crypto';
+
+/**
+ * Huella de un refresh token para guardarla en la base. Antes era bcrypt, y
+ * bcrypt solo mira los primeros 72 caracteres: todos los refresh tokens de un
+ * mismo usuario comparten esos 72 (cabecera del JWT + su id), así que
+ * cualquiera "coincidía" con cualquier otro. La renovación fallaba si el
+ * primero que se encontraba estaba vencido, y revocar un token no servía de
+ * nada. Un token es aleatorio y largo: SHA-256 basta y compara todo el token.
+ */
+export function huellaDeRefresh(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 /**
  * Superusuario de la plataforma: marcado en la base de datos o con su correo en
@@ -117,10 +130,10 @@ export class AuthService {
     };
 
     const accessToken = signJWT(payload, this.accessSecret, '15m');
-    const refreshToken = signJWT({ userId: user.id }, this.refreshSecret, '7d');
+    const refreshToken = signJWT({ userId: user.id, jti: randomUUID() }, this.refreshSecret, '7d');
 
     // 4. Guardar Refresh Token (Hash para seguridad)
-    const refreshTokenHash = await hashBcrypt(refreshToken);
+    const refreshTokenHash = huellaDeRefresh(refreshToken);
     
     await this.prisma.refreshToken.create({
       data: {
@@ -177,9 +190,11 @@ export class AuthService {
 
   async logout(accessToken: string, refreshToken: string) {
     this.logger.log('logout - Requesting logout');
+    let userId: string | undefined;
     // 1. Blacklist Access Token (prefijo blacklist:at:)
     try {
       const decoded = verifyJWT<any>(accessToken, this.accessSecret);
+      userId = decoded.userId;
       const ttl = Math.floor((decoded.exp * 1000 - Date.now()) / 1000);
       if (ttl > 0) {
         this.logger.log(`logout - Blacklisting access token for ${ttl}s`);
@@ -189,15 +204,21 @@ export class AuthService {
       this.logger.warn('logout - Access token validation failed or expired during logout');
     }
 
-    // 2. Revocar Refresh Token en DB
-    this.logger.log('logout - Revoking active refresh tokens in database');
-    await this.prisma.refreshToken.updateMany({
-      where: {
-        tokenHash: { not: '' },
-        revokedAt: null,
-      },
-      data: { revokedAt: new Date() },
-    });
+    // 2. Revocar el refresh token de ESTA sesión. Antes se revocaban los de
+    //    todos los usuarios de la plataforma: un logout cerraba la sesión de
+    //    todo el mundo en su siguiente renovación. Sin refresh token, se
+    //    cierran las sesiones de este usuario y de nadie más.
+    if (refreshToken) {
+      await this.prisma.refreshToken.updateMany({
+        where: { tokenHash: huellaDeRefresh(refreshToken), revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    } else if (userId) {
+      await this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
   }
 
   async setPassword(dto: any) {
@@ -282,21 +303,13 @@ export class AuthService {
       throw new UnauthorizedException('Refresh Token inválido o expirado');
     }
 
-    // 2. Buscar el token en DB (hash)
-    const tokens = await this.prisma.refreshToken.findMany({
-      where: { userId: decoded.userId, revokedAt: null },
+    // 2. Buscar el token por su huella. Tiene que ser de ese usuario, no estar
+    //    revocado (cada renovación revoca el anterior) ni vencido.
+    const dbToken = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash: huellaDeRefresh(refreshToken) },
     });
 
-    // Validar contra el hash de cada token activo
-    let dbToken = null;
-    for (const t of tokens) {
-      if (await compareBcrypt(refreshToken, t.tokenHash)) {
-        dbToken = t;
-        break;
-      }
-    }
-
-    if (!dbToken || dbToken.expiresAt < new Date()) {
+    if (!dbToken || dbToken.userId !== decoded.userId || dbToken.revokedAt || dbToken.expiresAt < new Date()) {
       this.logger.warn(`refreshTokens - Token mismatch or expired in database for user: ${decoded.userId}`);
       throw new UnauthorizedException('Refresh Token no encontrado o expirado');
     }
@@ -333,10 +346,10 @@ export class AuthService {
     };
 
     const newAccessToken = signJWT(payload, this.accessSecret, '15m');
-    const newRefreshToken = signJWT({ userId: user.id }, this.refreshSecret, '7d');
+    const newRefreshToken = signJWT({ userId: user.id, jti: randomUUID() }, this.refreshSecret, '7d');
 
     // 5. Guardar el nuevo hash
-    const newRefreshTokenHash = await hashBcrypt(newRefreshToken);
+    const newRefreshTokenHash = huellaDeRefresh(newRefreshToken);
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
