@@ -285,17 +285,38 @@ export class ClinicService {
       where: { clinicId },
     });
 
+    // Si la clínica atiende el número de WhatsApp del servidor sin tener una
+    // integración propia guardada, igual tiene WhatsApp funcionando.
+    const usaNumeroDelServidor = await this.atiendeElNumeroDelServidor(clinicId);
+
     const types = ['WHATSAPP', 'INSTAGRAM', 'GOOGLE_CALENDAR', 'DENTALINK', 'DENTIDESK', 'GMAIL'];
     return types.map(type => {
       const found = existing.find(e => e.type === type);
+      const cred = (found?.credentials as any) || {};
+      const porServidor = type === 'WHATSAPP' && !found && usaNumeroDelServidor;
       return {
         type,
-        connected: found?.connected ?? false,
+        connected: porServidor || (found?.connected ?? false),
+        // Configurada por el equipo de Dentral, verificada o no. Es lo que la
+        // clínica ve en su panel: lo que no está configurado no se le muestra.
+        configured: porServidor || Boolean(cred.encrypted_data) || cred.mode === 'dentral',
         last_tested_at: found?.lastTestedAt ? found.lastTestedAt.toISOString() : '',
-        last_test_ok: found?.lastTestOk ?? false,
-        latency_ms: (found?.credentials as any)?.latency_ms ?? undefined,
+        last_test_ok: porServidor ? true : found?.lastTestOk ?? false,
+        latency_ms: cred.latency_ms ?? undefined,
       };
     });
+  }
+
+  /** Mismo criterio que el enrutador del agente para el número del servidor. */
+  private async atiendeElNumeroDelServidor(clinicId: string): Promise<boolean> {
+    const numero = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+    if (!numero) return false;
+    const asignado = await this.prisma.clinicIntegration.findUnique({ where: { externalId: numero }, select: { clinicId: true } });
+    if (asignado) return asignado.clinicId === clinicId;
+    const porDefecto = process.env.WHATSAPP_DEFAULT_CLINIC_ID;
+    if (porDefecto) return porDefecto === clinicId;
+    const masAntigua = await this.prisma.clinic.findFirst({ where: { internal: false }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+    return masAntigua?.id === clinicId;
   }
 
   async testConnection(clinicId: string, typeStr: string) {
