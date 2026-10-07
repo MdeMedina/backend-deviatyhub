@@ -346,7 +346,13 @@ export class AuthService {
     });
 
     this.logger.log(`refreshTokens - Tokens refreshed successfully for user: ${user.id}`);
+    // Mismo formato que /auth/login. El frontend leía access_token y
+    // refresh_token y aquí solo iban en camelCase: guardaba tokens vacíos y la
+    // sesión quedaba rota a los 15 minutos. Se mantienen los dos nombres.
     return {
+      access_token: newAccessToken,
+      refresh_token: newRefreshToken,
+      expires_in: 900,
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
     };
