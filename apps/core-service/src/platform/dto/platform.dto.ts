@@ -102,3 +102,15 @@ export class CommercialDto {
   @IsOptional() @IsNumber() @Min(0) firstResponseTimeSec?: number | null;
   @IsOptional() @IsNumber() @Min(0) receptionHoursWeek?: number | null;
 }
+
+/** Ajustes del agente de la clínica. Se valida y normaliza en el servicio (ajustesDelAgente). */
+export class AgentSettingsDto {
+  @IsOptional() @IsString() @MaxLength(60) nombre?: string;
+  @IsOptional() @IsIn(['tu', 'usted']) trato?: 'tu' | 'usted';
+  @IsOptional() @IsNumber() @Min(0) @Max(60) anticipacionMinDias?: number;
+  @IsOptional() anticipacionMaxDias?: number | null;
+  @IsOptional() @IsBoolean() evaluacionPrimero?: boolean;
+  @IsOptional() @IsBoolean() abonoEvaluacionRepetida?: boolean;
+  @IsOptional() @IsObject() recordatorios?: { horas?: number[]; pedirConfirmacion?: boolean };
+  @IsOptional() @IsString() @MaxLength(200) atencionHumana?: string;
+}

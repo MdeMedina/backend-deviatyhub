@@ -27,6 +27,15 @@ export interface AvailabilityOptions {
      * repetía, y la hora acababa rebotando de un lado a otro.
      */
     excluirCitaId?: string;
+    /**
+     * Reglas que aplican solo cuando reserva el agente (el equipo, desde el
+     * panel, puede saltárselas): anticipación de la clínica y profesionales sin
+     * agenda abierta ("coordinar"), que el agente no ofrece.
+     */
+    agente?: {
+        anticipacionMinDias: number;
+        anticipacionMaxDias: number | null;
+    };
 }
 export declare function calcularHorasLibres(prisma: any, clinicId: string, date: Date, treatmentId?: string, doctorId?: string, options?: AvailabilityOptions): Promise<string[]>;
 /**
@@ -40,6 +49,6 @@ export declare function calcularHorasLibres(prisma: any, clinicId: string, date:
  * Solo se llama cuando no hay horas, así que el coste de estas consultas se
  * paga en un camino poco frecuente.
  */
-export declare function explicarSinHoras(prisma: any, clinicId: string, date: Date, treatmentId?: string, doctorId?: string): Promise<string>;
+export declare function explicarSinHoras(prisma: any, clinicId: string, date: Date, treatmentId?: string, doctorId?: string, agente?: AvailabilityOptions['agente']): Promise<string>;
 export {};
 //# sourceMappingURL=availability.util.d.ts.map

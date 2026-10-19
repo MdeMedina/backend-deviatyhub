@@ -28,6 +28,9 @@ export class StateManager {
     // el tratamiento lo atiende más de uno hay que saber con quién antes de
     // hablar de horas, porque las horas libres dependen de esa elección.
     requiereEleccionDoctor = false,
+    // La clínica exige evaluación a los pacientes nuevos: hay que saber si lo
+    // es antes de reservar, porque eso decide qué se puede agendar.
+    exigePacienteNuevo = false,
   ): Promise<ConversationStep> {
     
     // Lógica de 2 intentos para baja confianza
@@ -53,7 +56,8 @@ export class StateManager {
       // cita queda incompleta y hay que perseguir al paciente después.
       booking.rut &&
       booking.direccion &&
-      booking.correo;
+      booking.correo &&
+      (!exigePacienteNuevo || booking.paciente_nuevo);
 
     const pasoConocido: ConversationStep[] = [
       'inicio',
@@ -118,14 +122,14 @@ export class StateManager {
 
       case 'esperando_horario':
         if (booking.hora) {
-          nextStep = (booking.Nombre && booking.Apellido && booking.rut && booking.direccion && booking.correo)
+          nextStep = (booking.Nombre && booking.Apellido && booking.rut && booking.direccion && booking.correo && (!exigePacienteNuevo || booking.paciente_nuevo))
             ? 'listo_para_ejecucion'
             : 'esperando_datos_personales';
         }
         break;
 
       case 'esperando_datos_personales':
-        if (booking.Nombre && booking.Apellido && booking.rut && booking.direccion && booking.correo) {
+        if (booking.Nombre && booking.Apellido && booking.rut && booking.direccion && booking.correo && (!exigePacienteNuevo || booking.paciente_nuevo)) {
           nextStep = 'listo_para_ejecucion';
         }
         break;

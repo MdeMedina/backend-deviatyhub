@@ -7,7 +7,7 @@ import { MedidorDeUso, sumarUso, type UsoDelTurno } from './usage';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
-import { explicarSinHoras, normalizarRut, accionDelAgenteHabilitada } from '@deviaty/shared-utils';
+import { explicarSinHoras, normalizarRut, accionDelAgenteHabilitada, ajustesDelAgente, adaptarTrato, type AjustesAgente } from '@deviaty/shared-utils';
 import { IntentionClassifier, Intent } from './intention.classifier';
 import { StateManager, ConversationStep } from './state.manager';
 import { AvailabilityTool } from '../tools/availability.tool';
@@ -77,6 +77,12 @@ export class BrainService {
     const currentDate = format(nowLocal, 'yyyy-MM-dd');
     const currentTime = format(nowLocal, 'HH:mm');
     const currentDayOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][nowLocal.getDay()];
+
+    // Cómo trabaja el agente en esta clínica: nombre, trato, anticipación,
+    // evaluación primero, abono. Sin ajustes, todo como siempre.
+    const ajustes = ajustesDelAgente(
+      (await this.prisma.agentConfig.findUnique({ where: { clinicId: params.clinicId }, select: { settings: true } }))?.settings,
+    );
 
     // Una conversación que ya terminó su reserva vuelve a empezar de cero. Sin
     // esto, los datos de la reserva anterior seguían en metadata y cualquier
@@ -339,6 +345,7 @@ export class BrainService {
                 localDate,
                 tratamientoEfectivo,
                 doctorEfectivo,
+                { anticipacionMinDias: ajustes.anticipacionMinDias, anticipacionMaxDias: ajustes.anticipacionMaxDias },
               );
               const yaPaso = motivo === 'ese día ya pasó';
 
@@ -436,6 +443,25 @@ export class BrainService {
               `Error en SearchActiveAppointments: ${(e as Error).message}`
             );
             return 'ERROR_TECNICO_ESCALANDO_A_HUMANO';
+          }
+        },
+      }),
+      new DynamicStructuredTool({
+        name: 'confirm_appointment',
+        description:
+          'Marca como confirmada una hora del paciente cuando él confirma que va a asistir (por ejemplo, respondiendo "sí" al recordatorio). Usa el cita_id de HORAS RESERVADAS.',
+        schema: z.object({
+          appointment_id: z.string().describe('ID de la cita (UUID) que el paciente confirma'),
+        }),
+        func: async ({ appointment_id }) => {
+          try {
+            if (params.simulate) {
+              return '[SIMULADO] La asistencia se habría confirmado (no se ejecuta en el simulador).';
+            }
+            await this.actionsTool.confirmAppointment(params.clinicId, appointment_id);
+            return 'Asistencia confirmada en el sistema.';
+          } catch (e) {
+            return `No se pudo confirmar: ${(e as Error).message}`;
           }
         },
       }),
@@ -568,7 +594,8 @@ export class BrainService {
       - Si el paciente quiere agendar, cambiar o cancelar una hora, dile con naturalidad que en este momento eso lo gestiona el equipo de la clínica y que le van a responder por aquí mismo. Nunca prometas hacerlo tú ni inventes que ya quedó hecho.`
       : '';
 
-    const enabledToolNames = new Set<string>(['escalate_to_human']);
+    // Confirmar asistencia no mueve la agenda: está siempre disponible.
+    const enabledToolNames = new Set<string>(['escalate_to_human', 'confirm_appointment', 'search_active_appointments']);
     if (isActionEnabled('schedule')) {
       enabledToolNames.add('check_availability');
     }
@@ -660,7 +687,7 @@ export class BrainService {
             // persistido. Con la lista aquí, el modelo nunca tiene que adivinar.
             const quienes = ((t as any).doctors || [])
               .filter((dt: any) => dt.doctor && dt.doctor.active !== false)
-              .map((dt: any) => `[ID: ${dt.doctor.id}] ${dt.doctor.name}`);
+              .map((dt: any) => `[ID: ${dt.doctor.id}] ${dt.doctor.name}${dt.doctor.bookingMode === 'coordinar' ? ' (sin agenda abierta: lo coordina el equipo)' : ''}`);
             const atiende = quienes.length
               ? ` Lo atienden: ${quienes.join(' · ')}`
               : ' Sin especialista asignado: no lo ofrezcas para agendar.';
@@ -672,10 +699,49 @@ export class BrainService {
               ? ` ANTES DE RESERVARLO PREGUNTA: "${(t as any).extraQuestion}" y guarda la respuesta en "respuesta_tratamiento".`
               : '';
 
-            return `- [ID: ${t.id}] ${t.name}${duration}. Precios: ${priceList}.${atiende}${extra}`;
+            const abono = (t as any).requiresDeposit ? ' SE RESERVA CON ABONO: no lo agendes tú, lo coordina el equipo.' : '';
+            const evaluacion = (t as any).isEvaluation ? ' ES LA EVALUACIÓN INICIAL.' : '';
+
+            return `- [ID: ${t.id}] ${t.name}${duration}. Precios: ${priceList}.${atiende}${extra}${abono}${evaluacion}`;
           })
           .join('\n')
       : 'No hay tratamientos disponibles actualmente.';
+
+    // Reglas propias de esta clínica, desde sus ajustes.
+    const tratamientoEvaluacion = activeTreatments.find((t: any) => t.isEvaluation);
+    const reglasClinica: string[] = [];
+    if (ajustes.anticipacionMinDias > 0) {
+      reglasClinica.push(
+        ajustes.anticipacionMinDias === 1
+          ? 'Solo se reservan horas con al menos 1 día de anticipación: nunca para hoy. Si piden para hoy, ofrece desde mañana.'
+          : `Solo se reservan horas con al menos ${ajustes.anticipacionMinDias} días de anticipación.`,
+      );
+    }
+    if (ajustes.anticipacionMaxDias) {
+      reglasClinica.push(`La agenda se abre hasta ${ajustes.anticipacionMaxDias} días hacia adelante.`);
+    }
+    if (ajustes.evaluacionPrimero && tratamientoEvaluacion) {
+      reglasClinica.push(
+        `Paciente nuevo: siempre parte con una evaluación. Si quiere agendar y no sabes si es su primera vez en la clínica, pregúntaselo antes de ofrecer horas y guarda la respuesta en "paciente_nuevo" ("si" o "no"). Si es primera vez, la única hora que puedes agendar es la *${tratamientoEvaluacion.name}* [ID: ${tratamientoEvaluacion.id}]: explícale que primero se hace la evaluación, aunque haya pedido otro tratamiento.`,
+      );
+    }
+    reglasClinica.push(
+      'Si el tratamiento se reserva con abono o el profesional no tiene agenda abierta, no ofrezcas horas ni pidas datos: el sistema le pasa la solicitud al equipo.',
+    );
+    if (ajustes.atencionHumana) {
+      reglasClinica.push(`El equipo responde ${ajustes.atencionHumana}.`);
+    }
+    const reglasClinicaBlock = `- Reglas de esta clínica:\n${reglasClinica.map((r) => `  - ${r}`).join('\n')}`;
+
+    // Llaves fuera: el texto va dentro de una plantilla de LangChain.
+    const sinLlaves = (t: string) => t.replace(/[{}]/g, '');
+    const identidad = ajustes.nombre
+      ? `${sinLlaves(ajustes.nombre)}, la recepcionista virtual`
+      : 'la recepcionista virtual';
+    const reglaDeTrato =
+      ajustes.trato === 'usted'
+        ? 'Trata SIEMPRE de "usted" ("le", "su", "¿Me da su RUT?"), aunque el paciente te tutee. Los ejemplos de abajo están escritos de tú: adáptalos a usted.'
+        : 'Trata de "tú". Si el paciente te trata de "usted", pasa a "usted" y mantenlo.';
 
     // Especialistas que atienden el tratamiento YA elegido. El modelo no tenía
     // forma de saberlo: la lista de doctores solo trae nombre y título, y la de
@@ -751,7 +817,7 @@ export class BrainService {
     // único, markdown, RUT, anuncios falsos) se quitan de aquí: repetirlas solo
     // añadía tokens, y con un modelo de razonamiento, latencia.
     const prompt = ChatPromptTemplate.fromMessages([
-      ['system', `Eres la recepcionista virtual de la clínica dental "{clinicName}", en Chile. Atiendes a los pacientes por WhatsApp. Responde en su mismo idioma ({detectedLanguage}).
+      ['system', `Eres {identidad} de la clínica dental "{clinicName}", en Chile. Atiendes a los pacientes por WhatsApp. Responde en su mismo idioma ({detectedLanguage}).
 
 {supervisedBlock}
 
@@ -759,7 +825,7 @@ export class BrainService {
 
 Como una buena recepcionista de clínica: cálida, clara y breve. Profesional, sin coloquialismos marcados. El paciente te lee en el teléfono, así que cada mensaje dice una sola cosa y hace avanzar la conversación.
 
-- Trata de "tú". Si el paciente te trata de "usted", pasa a "usted" y mantenlo.
+- {reglaDeTrato}
 - Cuando ya sepas su nombre, úsalo de vez en cuando: "Gracias, Edguard".
 - Di "hora", no "cita". Di "te acomoda" o "prefieres", no "te gustaría".
 - Si te saluda, devuelve el saludo.
@@ -835,6 +901,7 @@ Para cambiar o anular una hora que ya tiene, mira el bloque de HORAS RESERVADAS.
 - Políticas y preguntas frecuentes:
 {policies}
 {overridesBlock}
+{reglasClinicaBlock}
 
 ## HOY
 
@@ -869,6 +936,7 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
   "direccion": "dirección o vacío",
   "correo": "correo o vacío",
   "respuesta_tratamiento": "la respuesta a la pregunta propia del tratamiento, o vacío",
+  "paciente_nuevo": "si si es su primera vez en la clínica, no si ya se atendió antes, o vacío",
   "paso": "el paso del flujo"
 }}
 
@@ -912,6 +980,9 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
       treatments: treatmentsInfo,
       policies: policiesInfo,
       overridesBlock,
+      reglasClinicaBlock,
+      identidad,
+      reglaDeTrato,
       currentStep: params.currentStep,
       intent: classification.intent,
       currentDate,
@@ -963,6 +1034,8 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
         direccion: parsedJson.direccion || existingMetadata.booking?.direccion || '',
         respuesta_tratamiento:
           parsedJson.respuesta_tratamiento || existingMetadata.booking?.respuesta_tratamiento || '',
+        paciente_nuevo: siONo(parsedJson.paciente_nuevo) || existingMetadata.booking?.paciente_nuevo || '',
+        tratamiento_de_interes: existingMetadata.booking?.tratamiento_de_interes || '',
         // El paciente dijo que le da igual con quién. Lo decide el sistema, no
         // el modelo, así que no viaja en el JSON de respuesta.
         doctor_sin_preferencia: pacienteSinPreferencia,
@@ -1032,6 +1105,25 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
         }
       }
 
+      // Paciente nuevo en una clínica que exige evaluación: lo que se reserva es
+      // la evaluación, aunque haya pedido otro tratamiento. Se decide aquí: si
+      // dependiera del modelo, un "quiero una endodoncia" de alguien que nunca
+      // vino terminaría en una endodoncia reservada sin evaluación previa.
+      const evaluacion = activeTreatments.find((t: any) => t.isEvaluation);
+      if (
+        ajustes.evaluacionPrimero &&
+        evaluacion &&
+        updatedBooking.paciente_nuevo === 'si' &&
+        updatedBooking.procedimiento_id &&
+        updatedBooking.procedimiento_id !== evaluacion.id
+      ) {
+        const pedido = activeTreatments.find((t: any) => t.id === updatedBooking.procedimiento_id);
+        this.logger.log(`Paciente nuevo: "${pedido?.name ?? updatedBooking.procedimiento_id}" pasa a ${evaluacion.name}.`);
+        updatedBooking.tratamiento_de_interes = pedido?.name || updatedBooking.tratamiento_de_interes;
+        updatedBooking.procedimiento_id = evaluacion.id;
+        updatedBooking.doctor_id = '';
+      }
+
       await this.prisma.conversation.update({
         where: { id: params.conversationId },
         data: {
@@ -1062,12 +1154,38 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
         classification.confidence,
         currentBooking,
         requiereEleccionDoctor,
+        ajustes.evaluacionPrimero && activeTreatments.some((t: any) => t.isEvaluation),
       );
       finalStep = nextStep;
 
+      // 6.b Reservas que el agente no cierra: tratamiento con abono (o segunda
+      //     evaluación, si la clínica la cobra) o profesional sin agenda
+      //     abierta. Se pasa la solicitud al equipo y no se intenta reservar.
+      const coordinacion =
+        currentBooking.procedimiento_id &&
+        (classification.intent === Intent.AGENDAR_CITA ||
+          ['esperando_doctor', 'esperando_fecha', 'esperando_horario', 'esperando_datos_personales', 'listo_para_ejecucion'].includes(nextStep))
+          ? await this.requiereCoordinacion(params.clinicId, currentBooking, ajustes)
+          : null;
+      if (coordinacion) {
+        this.logger.log(`Reserva para coordinar (${coordinacion.motivo}): ${coordinacion.tratamiento}.`);
+        if (!params.simulate) {
+          await this.humanTool.escalate(
+            params.conversationId,
+            `Coordinar hora de ${coordinacion.tratamiento}${coordinacion.profesional ? ` con ${coordinacion.profesional}` : ''} (${coordinacion.motivo === 'abono' ? 'se reserva con abono' : 'profesional sin agenda abierta'}).`,
+          );
+        }
+        const horario = ajustes.atencionHumana ? `, en horario de atención (${ajustes.atencionHumana})` : '';
+        replyText =
+          coordinacion.motivo === 'abono'
+            ? `${coordinacion.tratamiento} se reserva con un abono, así que la hora te la coordina directamente nuestro equipo. Ya les dejé tu solicitud y te escribirán por aquí${horario}.`
+            : `La agenda de ${coordinacion.profesional || coordinacion.tratamiento} la coordina directamente nuestro equipo. Ya les dejé tu solicitud y te escribirán por aquí${horario}.`;
+        finalStep = 'human_takeover';
+      }
+
       // 7. Acción transaccional DETERMINISTA: solo al llegar a `listo_para_ejecucion`.
       //    Implementa la regla crítica del doc: no se agenda hasta este estado.
-      if (nextStep === 'listo_para_ejecucion') {
+      if (nextStep === 'listo_para_ejecucion' && !coordinacion) {
         if (params.simulate) {
           replyText = `[SIMULADO] Tu cita quedó agendada para el ${currentBooking.fecha || ''} a las ${currentBooking.hora || ''}.`;
           await this.prisma.conversation.update({
@@ -1181,7 +1299,7 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
           this.logger.log(
             `Pregunta por especialista suprimida: ${unico.name} es el único que atiende ese tratamiento.`,
           );
-          replyText = buildMissingDataReply(currentBooking);
+          replyText = buildMissingDataReply(currentBooking, { exigePacienteNuevo: ajustes.evaluacionPrimero && activeTreatments.some((t: any) => t.isEvaluation) });
         }
       }
 
@@ -1237,6 +1355,7 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
       const HERRAMIENTAS_QUE_CAMBIAN = [
         'reschedule_appointment',
         'cancel_appointment',
+        'confirm_appointment',
         'schedule_appointment',
       ];
       const pasos: any[] = Array.isArray((response as any).intermediateSteps)
@@ -1290,12 +1409,13 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
 
         replyText = gestionaCitaExistente
           ? 'Todavía no pude aplicar el cambio en tu hora.\n\nDime qué día y hora prefieres y lo dejo listo.'
-          : buildMissingDataReply(currentBooking);
+          : buildMissingDataReply(currentBooking, { exigePacienteNuevo: ajustes.evaluacionPrimero && activeTreatments.some((t: any) => t.isEvaluation) });
       }
     }
 
     return {
-      text: sanitizeReply(replyText),
+      // Los textos que arma el propio sistema están escritos de tú.
+      text: adaptarTrato(sanitizeReply(replyText), ajustes.trato),
       currentStep: finalStep,
       intent: classification.intent,
       certainty: classification.confidence,
@@ -1443,6 +1563,35 @@ Paso actual del flujo: {currentStep}. Intención detectada: {intent}.
   }
 
   /** Profesionales activos que atienden un tratamiento. */
+  /**
+   * ¿Esta reserva la tiene que coordinar el equipo? Sí cuando el tratamiento
+   * se reserva con abono (el agente no puede cobrar ni verificar un pago),
+   * cuando es una segunda evaluación y la clínica la cobra, o cuando el
+   * profesional elegido, o todos los que lo atienden, no tienen agenda abierta.
+   */
+  private async requiereCoordinacion(
+    clinicId: string,
+    booking: any,
+    ajustes: AjustesAgente,
+  ): Promise<{ motivo: 'abono' | 'coordinar'; tratamiento: string; profesional?: string } | null> {
+    const t: any = await this.prisma.treatment.findFirst({
+      where: { id: booking.procedimiento_id, clinicId },
+      include: { doctors: { include: { doctor: true } } },
+    });
+    if (!t) return null;
+    if (t.requiresDeposit) return { motivo: 'abono', tratamiento: t.name };
+    if (t.isEvaluation && ajustes.abonoEvaluacionRepetida && booking.paciente_nuevo === 'no') {
+      return { motivo: 'abono', tratamiento: `La segunda evaluación` };
+    }
+    const doctores = (t.doctors || []).map((dt: any) => dt.doctor).filter((d: any) => d && d.active !== false);
+    const elegido = booking.doctor_id ? doctores.find((d: any) => d.id === booking.doctor_id) : null;
+    if (elegido?.bookingMode === 'coordinar') return { motivo: 'coordinar', tratamiento: t.name, profesional: elegido.name };
+    if (!elegido && doctores.length && doctores.every((d: any) => d.bookingMode === 'coordinar')) {
+      return { motivo: 'coordinar', tratamiento: t.name, profesional: doctores.length === 1 ? doctores[0].name : undefined };
+    }
+    return null;
+  }
+
   private async especialistasDe(
     clinicId: string,
     treatmentId?: string,
@@ -2101,10 +2250,14 @@ export function claimsBookingDone(text: string): boolean {
  * Mensaje de reemplazo cuando el modelo confirmó de más: pide el primer dato
  * que falta, en el mismo orden que exige la máquina de estados.
  */
-export function buildMissingDataReply(booking: any): string {
+export function buildMissingDataReply(booking: any, opciones: { exigePacienteNuevo?: boolean } = {}): string {
   const b = booking || {};
   if (!b.procedimiento_id) {
     return 'Para reservarte la hora necesito saber qué tratamiento necesitas.\n\n¿Me dices cuál?';
+  }
+  // Decide qué se puede agendar (evaluación primero), así que va antes de la fecha.
+  if (opciones.exigePacienteNuevo && !b.paciente_nuevo) {
+    return '¿Es la primera vez que te atiendes en la clínica?';
   }
   if (!b.fecha) {
     return 'Me falta la fecha para dejar la reserva.\n\n¿Qué día te acomoda?';
@@ -2148,4 +2301,12 @@ export function formatFechaHumana(date: Date): string {
 export function formatCLP(value: number | null | undefined): string {
   if (value == null) return '';
   return `$${Math.round(value).toLocaleString('es-CL')}`;
+}
+
+/** "sí", "si", "no" del modelo, normalizados; cualquier otra cosa, vacío. */
+function siONo(v: unknown): '' | 'si' | 'no' {
+  const t = String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (t === 'si') return 'si';
+  if (t === 'no') return 'no';
+  return '';
 }

@@ -5,7 +5,7 @@ import { EventBus } from '@deviaty/shared-events';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { enviarYRegistrar } from '../outbound.util';
-import { agenteHabilitado, recordatoriosHabilitados } from '@deviaty/shared-utils';
+import { agenteHabilitado, recordatoriosHabilitados, ajustesDelAgente } from '@deviaty/shared-utils';
 
 /**
  * Los tres avisos, del más lejano al más cercano.
@@ -17,9 +17,9 @@ import { agenteHabilitado, recordatoriosHabilitados } from '@deviaty/shared-util
  * para no renombrar una columna en producción por una cuestión de etiqueta.
  */
 const AVISOS = [
-  { campo: 'reminder3dSent' as const, minutos: 3 * 24 * 60, etiqueta: '3 días' },
-  { campo: 'reminder1dSent' as const, minutos: 24 * 60, etiqueta: '1 día' },
-  { campo: 'reminder1hSent' as const, minutos: 2 * 60, etiqueta: '2 horas' },
+  { campo: 'reminder3dSent' as const, minutos: 3 * 24 * 60, etiqueta: '3 días', horas: 72 },
+  { campo: 'reminder1dSent' as const, minutos: 24 * 60, etiqueta: '1 día', horas: 24 },
+  { campo: 'reminder1hSent' as const, minutos: 2 * 60, etiqueta: '2 horas', horas: 2 },
 ];
 
 @Injectable()
@@ -68,7 +68,7 @@ export class ReminderService implements OnModuleInit, OnModuleDestroy {
         scheduledAt: { gt: ahora, lte: masLejano },
         createdAt: { lt: margen },
       },
-      include: { contact: true, clinic: true, doctor: true, treatment: true },
+      include: { contact: true, clinic: { include: { agentConfig: { select: { settings: true } } } }, doctor: true, treatment: true },
     });
 
     for (const cita of citas) {
@@ -96,7 +96,10 @@ export class ReminderService implements OnModuleInit, OnModuleDestroy {
     // se dan por enviados aunque no salieran: una hora reservada para mañana
     // nunca tuvo un momento "3 días antes", y mandar los tres de golpe sería
     // tres mensajes seguidos por lo mismo.
-    const aplicables = AVISOS.filter((a) => faltanMin <= a.minutos);
+    // Solo los avisos que la clínica eligió (por defecto, los tres).
+    const ajustes = ajustesDelAgente(cita.clinic?.agentConfig?.settings);
+    const elegidos = AVISOS.filter((a) => ajustes.recordatorios.horas.includes(a.horas));
+    const aplicables = elegidos.filter((a) => faltanMin <= a.minutos);
     if (!aplicables.length) return;
 
     const aEnviar = aplicables[aplicables.length - 1];
@@ -115,7 +118,7 @@ export class ReminderService implements OnModuleInit, OnModuleDestroy {
 
     await enviarYRegistrar(this.prisma, this.eventBus, this.logger, {
       recipient: telefono,
-      content: this.mensaje(cita, aEnviar.etiqueta),
+      content: this.mensaje(cita, aEnviar.etiqueta, ajustes.recordatorios.pedirConfirmacion),
       conversationId: cita.conversationId ?? null,
       clinicId: cita.clinicId,
     });
@@ -126,7 +129,7 @@ export class ReminderService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Recordatorio de ${aEnviar.etiqueta} enviado a ${telefono} (cita ${cita.id}).`);
   }
 
-  private mensaje(cita: any, etiqueta: string): string {
+  private mensaje(cita: any, etiqueta: string, pedirConfirmacion = false): string {
     const cuando =
       `${format(cita.scheduledAt, "eeee d 'de' MMMM", { locale: es })} a las ` +
       `${format(cita.scheduledAt, 'HH:mm')}`;
@@ -141,7 +144,9 @@ export class ReminderService implements OnModuleInit, OnModuleDestroy {
     return (
       `${cabecera}.\n\n` +
       `*${cita.treatment?.name ?? 'Atención'}* el *${cuando}*${conQuien}.\n\n` +
-      `Si no puedes asistir o necesitas cambiarla, respóndenos por aquí y lo vemos.`
+      (pedirConfirmacion
+        ? `¿Nos confirmas tu asistencia? Responde *sí* para confirmar, o dinos si necesitas cambiarla.`
+        : `Si no puedes asistir o necesitas cambiarla, respóndenos por aquí y lo vemos.`)
     );
   }
 }

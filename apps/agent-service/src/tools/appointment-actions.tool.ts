@@ -156,6 +156,20 @@ export class AppointmentActionsTool {
     return { success: true, appointment };
   }
 
+  /** El paciente confirmó que va a asistir (por ejemplo, respondiendo al recordatorio). */
+  async confirmAppointment(clinicId: string, appointmentId: string) {
+    const cita = await this.prisma.appointment.findFirst({ where: { id: appointmentId, clinicId } });
+    if (!cita) throw new Error(`La cita con ID ${appointmentId} no existe en esta clínica.`);
+    if (cita.status === 'CANCELLED') throw new Error('Esa cita está cancelada.');
+    await this.prisma.$transaction([
+      this.prisma.appointment.update({ where: { id: appointmentId }, data: { status: 'CONFIRMED' } }),
+      this.prisma.appointmentHistory.create({
+        data: { appointmentId, event: 'status_changed_confirmed', payload: { by: 'agent', at: new Date().toISOString() } },
+      }),
+    ]);
+    return { success: true };
+  }
+
   async cancelAppointment(
     clinicId: string,
     appointmentId: string,

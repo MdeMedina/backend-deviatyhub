@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { ajustesDelAgente, adaptarTrato } from '@deviaty/shared-utils';
 
 /**
  * Envía un mensaje al paciente y lo deja registrado en su conversación.
@@ -22,6 +23,11 @@ export async function enviarYRegistrar(
     clinicId: string;
   },
 ): Promise<void> {
+  // Los avisos están escritos de tú; en una clínica que trata de usted se adaptan.
+  const ajustes = ajustesDelAgente(
+    (await prisma.agentConfig.findUnique({ where: { clinicId: datos.clinicId }, select: { settings: true } }))?.settings,
+  );
+  datos = { ...datos, content: adaptarTrato(datos.content, ajustes.trato) };
   await eventBus.publish('message.outbound', {
     recipient: datos.recipient,
     content: datos.content,

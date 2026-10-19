@@ -6,3 +6,4 @@ export * from './validate.util';
 export * from './availability.util';
 export * from './paciente.util';
 export * from './accesos.util';
+export * from './ajustes.util';

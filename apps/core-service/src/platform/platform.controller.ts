@@ -6,7 +6,8 @@ import { PlatformWhatsAppService } from './platform-whatsapp.service';
 import { PlatformMetricsService } from './platform-metrics.service';
 import { ImpactService } from '../metrics/impact.service';
 import { PrismaService } from '@deviaty/shared-prisma';
-import { CommercialDto, CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto, WhatsAppOwnDto } from './dto/platform.dto';
+import { ajustesDelAgente } from '@deviaty/shared-utils';
+import { AgentSettingsDto, CommercialDto, CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto, WhatsAppOwnDto } from './dto/platform.dto';
 
 /** Backoffice del equipo de la plataforma. Nada de aquí depende de la clínica del usuario. */
 @Controller('platform')
@@ -35,6 +36,27 @@ export class PlatformController {
   @Get('clinics/:id/impact')
   impactoDeClinica(@Param('id', ParseUUIDPipe) id: string, @Query('days') days?: string) {
     return this.impacto.impacto(id, dias(days));
+  }
+
+  @Get('clinics/:id/agent-settings')
+  async ajustesDelAgente(@Param('id', ParseUUIDPipe) id: string) {
+    const config = await this.prisma.agentConfig.findUnique({ where: { clinicId: id }, select: { settings: true, mode: true } });
+    return { mode: config?.mode ?? null, settings: ajustesDelAgente(config?.settings) };
+  }
+
+  @Put('clinics/:id/agent-settings')
+  async guardarAjustesDelAgente(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AgentSettingsDto) {
+    const existe = await this.prisma.clinic.findFirst({ where: { id, internal: false }, select: { id: true } });
+    if (!existe) throw new NotFoundException('No existe esa clínica.');
+    const actual = await this.prisma.agentConfig.findUnique({ where: { clinicId: id }, select: { settings: true } });
+    // Se fusiona con lo que había y se guarda ya normalizado.
+    const settings = ajustesDelAgente({ ...((actual?.settings as object) || {}), ...dto });
+    await this.prisma.agentConfig.upsert({
+      where: { clinicId: id },
+      create: { clinicId: id, settings: settings as any, mode: 'PAUSED' },
+      update: { settings: settings as any },
+    });
+    return { settings };
   }
 
   @Get('clinics/:id/commercial')

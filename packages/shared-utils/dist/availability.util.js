@@ -4,6 +4,7 @@ exports.intersectarTramos = exports.aMinutos = void 0;
 exports.calcularHorasLibres = calcularHorasLibres;
 exports.explicarSinHoras = explicarSinHoras;
 const date_fns_1 = require("date-fns");
+const ajustes_util_1 = require("./ajustes.util");
 const aMinutos = (hhmm) => {
     const [h, m] = String(hhmm).split(':').map(Number);
     return (h || 0) * 60 + (m || 0);
@@ -24,7 +25,10 @@ const intersectarTramos = (a, b) => {
 };
 exports.intersectarTramos = intersectarTramos;
 async function calcularHorasLibres(prisma, clinicId, date, treatmentId, doctorId, options = {}) {
-    const { excluirPasado = true, excluirCitaId } = options;
+    const { excluirPasado = true, excluirCitaId, agente } = options;
+    // 0. Anticipación de la clínica: fuera de ella no hay nada que ofrecer.
+    if (agente && (0, ajustes_util_1.fueraDeAnticipacion)(date, agente))
+        return [];
     // 1. Duración de la reserva
     let durationMin = 30;
     if (treatmentId) {
@@ -52,6 +56,15 @@ async function calcularHorasLibres(prisma, clinicId, date, treatmentId, doctorId
     else {
         const activos = await prisma.doctor.findMany({ where: { clinicId, active: true } });
         doctorIds = activos.map((d) => d.id);
+    }
+    // El agente no ofrece horas de quien no tiene agenda abierta.
+    if (agente && doctorIds.length) {
+        const conAgenda = await prisma.doctor.findMany({
+            where: { id: { in: doctorIds }, bookingMode: { not: 'coordinar' } },
+            select: { id: true },
+        });
+        const abiertos = new Set(conAgenda.map((d) => d.id));
+        doctorIds = doctorIds.filter((id) => abiertos.has(id));
     }
     if (doctorIds.length === 0)
         return [];
@@ -176,11 +189,14 @@ async function calcularHorasLibres(prisma, clinicId, date, treatmentId, doctorId
  * Solo se llama cuando no hay horas, así que el coste de estas consultas se
  * paga en un camino poco frecuente.
  */
-async function explicarSinHoras(prisma, clinicId, date, treatmentId, doctorId) {
+async function explicarSinHoras(prisma, clinicId, date, treatmentId, doctorId, agente) {
     const finDelDia = (0, date_fns_1.endOfDay)(date);
     if (finDelDia.getTime() < Date.now()) {
         return 'ese día ya pasó';
     }
+    const porAnticipacion = agente ? (0, ajustes_util_1.fueraDeAnticipacion)(date, agente) : null;
+    if (porAnticipacion)
+        return porAnticipacion;
     const dayOfWeek = date.getDay();
     const horarioClinica = await prisma.clinicSchedule.findFirst({ where: { clinicId, dayOfWeek } });
     if (horarioClinica && horarioClinica.isOpen === false) {
@@ -191,7 +207,7 @@ async function explicarSinHoras(prisma, clinicId, date, treatmentId, doctorId) {
     if (doctorId) {
         const d = await prisma.doctor.findUnique({ where: { id: doctorId } });
         if (d)
-            candidatos = [{ id: d.id, name: d.name }];
+            candidatos = [{ id: d.id, name: d.name, bookingMode: d.bookingMode }];
     }
     else if (treatmentId) {
         const rel = await prisma.doctorTreatment.findMany({
@@ -200,7 +216,7 @@ async function explicarSinHoras(prisma, clinicId, date, treatmentId, doctorId) {
         });
         candidatos = rel
             .filter((dt) => dt.doctor && dt.doctor.active !== false)
-            .map((dt) => ({ id: dt.doctor.id, name: dt.doctor.name }));
+            .map((dt) => ({ id: dt.doctor.id, name: dt.doctor.name, bookingMode: dt.doctor.bookingMode }));
     }
     if (!candidatos.length) {
         return 'no hay ningún profesional asignado a ese tratamiento';
@@ -221,6 +237,10 @@ async function explicarSinHoras(prisma, clinicId, date, treatmentId, doctorId) {
     for (const c of candidatos) {
         const suyas = jornadas.filter((j) => j.doctorId === c.id);
         const eseDia = suyas.filter((j) => j.dayOfWeek === dayOfWeek);
+        if (agente && c.bookingMode === 'coordinar') {
+            motivos.push(`${c.name} no tiene agenda abierta: sus horas las coordina directamente la clínica`);
+            continue;
+        }
         if (suyas.length && !eseDia.length) {
             motivos.push(`${c.name} no atiende ese día de la semana`);
             continue;

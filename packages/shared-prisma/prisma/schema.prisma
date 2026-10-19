@@ -213,6 +213,9 @@ model AgentConfig {
   clinicId  String    @unique @map("clinic_id") @db.Uuid
   actions   Json      @default("{}")
   mode      AgentMode @default(AUTONOMOUS)
+  /// Ajustes del agente para esta clínica: nombre, trato, anticipación,
+  /// evaluación primero y recordatorios. Ver ajustes.util en shared-utils.
+  settings  Json      @default("{}")
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   clinic Clinic @relation(fields: [clinicId], references: [id])
@@ -320,6 +323,10 @@ model Doctor {
   name      String
   title     String
   active    Boolean?  @default(true)
+  /// "agenda": el agente ofrece y reserva sus horas. "coordinar": no tiene
+  /// agenda abierta (atiende "a conveniencia" o por citas puntuales); el agente
+  /// no le ofrece horas, toma la solicitud y se la pasa al equipo.
+  bookingMode String  @default("agenda") @map("booking_mode")
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -396,6 +403,11 @@ model Treatment {
   name            String
   category        String
   durationAvgMin  Int?      @map("duration_avg_min")
+  /// Se reserva con abono: el agente no la cierra, la coordina el equipo.
+  requiresDeposit Boolean @default(false) @map("requires_deposit")
+  /// Es la evaluación inicial: lo único que puede agendar un paciente nuevo
+  /// cuando la clínica lo exige.
+  isEvaluation    Boolean @default(false) @map("is_evaluation")
   encyclopediaRef String?   @map("encyclopedia_ref") @db.Uuid
   active          Boolean?  @default(true)
   // Campos que la API/front usan directamente sobre el tratamiento

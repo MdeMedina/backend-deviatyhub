@@ -1,4 +1,5 @@
 import { addMinutes, format, startOfDay, endOfDay } from 'date-fns';
+import { fueraDeAnticipacion } from './ajustes.util';
 
 /**
  * Cálculo de horas libres. Vive aquí porque había DOS implementaciones
@@ -46,6 +47,12 @@ export interface AvailabilityOptions {
    * repetía, y la hora acababa rebotando de un lado a otro.
    */
   excluirCitaId?: string;
+  /**
+   * Reglas que aplican solo cuando reserva el agente (el equipo, desde el
+   * panel, puede saltárselas): anticipación de la clínica y profesionales sin
+   * agenda abierta ("coordinar"), que el agente no ofrece.
+   */
+  agente?: { anticipacionMinDias: number; anticipacionMaxDias: number | null };
 }
 
 export async function calcularHorasLibres(
@@ -56,7 +63,10 @@ export async function calcularHorasLibres(
   doctorId?: string,
   options: AvailabilityOptions = {},
 ): Promise<string[]> {
-  const { excluirPasado = true, excluirCitaId } = options;
+  const { excluirPasado = true, excluirCitaId, agente } = options;
+
+  // 0. Anticipación de la clínica: fuera de ella no hay nada que ofrecer.
+  if (agente && fueraDeAnticipacion(date, agente)) return [];
 
   // 1. Duración de la reserva
   let durationMin = 30;
@@ -82,6 +92,15 @@ export async function calcularHorasLibres(
   } else {
     const activos = await prisma.doctor.findMany({ where: { clinicId, active: true } });
     doctorIds = activos.map((d: any) => d.id);
+  }
+  // El agente no ofrece horas de quien no tiene agenda abierta.
+  if (agente && doctorIds.length) {
+    const conAgenda = await prisma.doctor.findMany({
+      where: { id: { in: doctorIds }, bookingMode: { not: 'coordinar' } },
+      select: { id: true },
+    });
+    const abiertos = new Set(conAgenda.map((d: any) => d.id));
+    doctorIds = doctorIds.filter((id) => abiertos.has(id));
   }
   if (doctorIds.length === 0) return [];
 
@@ -226,11 +245,14 @@ export async function explicarSinHoras(
   date: Date,
   treatmentId?: string,
   doctorId?: string,
+  agente?: AvailabilityOptions['agente'],
 ): Promise<string> {
   const finDelDia = endOfDay(date);
   if (finDelDia.getTime() < Date.now()) {
     return 'ese día ya pasó';
   }
+  const porAnticipacion = agente ? fueraDeAnticipacion(date, agente) : null;
+  if (porAnticipacion) return porAnticipacion;
 
   const dayOfWeek = date.getDay();
   const horarioClinica = await prisma.clinicSchedule.findFirst({ where: { clinicId, dayOfWeek } });
@@ -242,7 +264,7 @@ export async function explicarSinHoras(
   let candidatos: { id: string; name: string }[] = [];
   if (doctorId) {
     const d = await prisma.doctor.findUnique({ where: { id: doctorId } });
-    if (d) candidatos = [{ id: d.id, name: d.name }];
+    if (d) candidatos = [{ id: d.id, name: d.name, bookingMode: d.bookingMode } as any];
   } else if (treatmentId) {
     const rel = await prisma.doctorTreatment.findMany({
       where: { clinicId, treatmentId },
@@ -250,7 +272,7 @@ export async function explicarSinHoras(
     });
     candidatos = rel
       .filter((dt: any) => dt.doctor && dt.doctor.active !== false)
-      .map((dt: any) => ({ id: dt.doctor.id, name: dt.doctor.name }));
+      .map((dt: any) => ({ id: dt.doctor.id, name: dt.doctor.name, bookingMode: dt.doctor.bookingMode }) as any);
   }
 
   if (!candidatos.length) {
@@ -275,6 +297,10 @@ export async function explicarSinHoras(
     const suyas = jornadas.filter((j: any) => j.doctorId === c.id);
     const eseDia = suyas.filter((j: any) => j.dayOfWeek === dayOfWeek);
 
+    if (agente && (c as any).bookingMode === 'coordinar') {
+      motivos.push(`${c.name} no tiene agenda abierta: sus horas las coordina directamente la clínica`);
+      continue;
+    }
     if (suyas.length && !eseDia.length) {
       motivos.push(`${c.name} no atiende ese día de la semana`);
       continue;
