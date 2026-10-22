@@ -100,6 +100,7 @@ model Clinic {
   billingEmail String     @map("billing_email")
   commercial   ClinicCommercial?
   agentTurns   AgentTurn[]
+  promptVersions AgentPromptVersion[]
   /// Lo que la plataforma le habilita (módulos del panel, agente, canales,
   /// acciones, recordatorios). Solo se edita desde el backoffice. Vacío =
   /// todo permitido. Ver accesos.util en shared-utils.
@@ -729,4 +730,26 @@ model AgentTurn {
   @@index([clinicId, createdAt])
   @@index([createdAt])
   @@map("agent_turns")
+}
+
+/// Versiones del texto de comportamiento del agente de una clínica, editadas
+/// desde el backoffice. Como mucho una está activa; sin ninguna activa, el
+/// agente usa el prompt base del sistema.
+model AgentPromptVersion {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  clinicId       String    @map("clinic_id") @db.Uuid
+  content        String
+  note           String?
+  /// Huella del prompt base vigente al guardar: si cambia, el backoffice avisa
+  /// de que esta versión no incluye las mejoras posteriores del sistema.
+  baseHash       String    @map("base_hash")
+  active         Boolean   @default(false)
+  createdById    String?   @map("created_by_id") @db.Uuid
+  createdByEmail String?   @map("created_by_email")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@index([clinicId, active])
+  @@map("agent_prompt_versions")
 }

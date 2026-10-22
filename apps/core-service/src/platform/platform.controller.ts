@@ -4,10 +4,11 @@ import { PlatformAdminGuard } from './platform.guard';
 import { PlatformService } from './platform.service';
 import { PlatformWhatsAppService } from './platform-whatsapp.service';
 import { PlatformMetricsService } from './platform-metrics.service';
+import { PlatformPromptService } from './platform-prompt.service';
 import { ImpactService } from '../metrics/impact.service';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { ajustesDelAgente } from '@deviaty/shared-utils';
-import { AgentSettingsDto, CommercialDto, CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto, WhatsAppOwnDto } from './dto/platform.dto';
+import { AgentSettingsDto, PromptDto, CommercialDto, CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto, WhatsAppOwnDto } from './dto/platform.dto';
 
 /** Backoffice del equipo de la plataforma. Nada de aquí depende de la clínica del usuario. */
 @Controller('platform')
@@ -19,7 +20,36 @@ export class PlatformController {
     @Inject(PlatformMetricsService) private readonly metricas: PlatformMetricsService,
     @Inject(ImpactService) private readonly impacto: ImpactService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PlatformPromptService) private readonly prompts: PlatformPromptService,
   ) {}
+
+  // ─── Prompt del agente de cada clínica ────────────────────────────
+
+  @Get('clinics/:id/prompt')
+  promptDeClinica(@Param('id', ParseUUIDPipe) id: string) {
+    return this.prompts.estado(id);
+  }
+
+  @Post('clinics/:id/prompt/review')
+  revisarPrompt(@Body() dto: PromptDto) {
+    return this.prompts.revisar(dto.content);
+  }
+
+  @Post('clinics/:id/prompt')
+  async guardarPrompt(@Param('id', ParseUUIDPipe) id: string, @Body() dto: PromptDto, @CurrentUserId() userId: string) {
+    const autor = userId ? await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } }) : null;
+    return this.prompts.guardar(id, dto.content, dto.note, { id: autor?.id, email: autor?.email });
+  }
+
+  @Post('clinics/:id/prompt/versions/:versionId/activate')
+  activarVersion(@Param('id', ParseUUIDPipe) id: string, @Param('versionId', ParseUUIDPipe) versionId: string) {
+    return this.prompts.activar(id, versionId);
+  }
+
+  @Delete('clinics/:id/prompt')
+  usarPromptBase(@Param('id', ParseUUIDPipe) id: string) {
+    return this.prompts.usarBase(id);
+  }
 
   // ─── Métricas ─────────────────────────────────────────────────────
 

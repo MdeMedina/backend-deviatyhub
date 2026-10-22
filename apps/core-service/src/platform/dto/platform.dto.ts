@@ -114,3 +114,14 @@ export class AgentSettingsDto {
   @IsOptional() @IsObject() recordatorios?: { horas?: number[]; pedirConfirmacion?: boolean };
   @IsOptional() @IsString() @MaxLength(200) atencionHumana?: string;
 }
+
+export class PromptDto {
+  @IsString()
+  @MaxLength(30000)
+  content!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
+}

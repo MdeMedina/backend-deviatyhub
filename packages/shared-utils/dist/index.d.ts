@@ -7,4 +7,5 @@ export * from './availability.util';
 export * from './paciente.util';
 export * from './accesos.util';
 export * from './ajustes.util';
+export * from './prompt.base';
 //# sourceMappingURL=index.d.ts.map
