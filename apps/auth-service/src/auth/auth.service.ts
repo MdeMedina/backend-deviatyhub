@@ -80,6 +80,9 @@ export class AuthService {
       userId: user.id,
       clinicId: user.clinicId,
       role: user.role.name as any,
+      // Lo que vale es la bandera del rol, no su nombre: cualquiera podía
+      // crear un rol llamado "SUPERADMIN".
+      isSuperadmin: user.role.isSuperadmin === true,
       email: user.email,
       // Los del rol, recortados a lo que la plataforma le habilita a la clínica.
       permissions: recortarPermisos(user.role.permissions, user.clinic?.entitlements) as any,
@@ -296,6 +299,9 @@ export class AuthService {
       userId: user.id,
       clinicId: user.clinicId,
       role: user.role.name as any,
+      // Lo que vale es la bandera del rol, no su nombre: cualquiera podía
+      // crear un rol llamado "SUPERADMIN".
+      isSuperadmin: user.role.isSuperadmin === true,
       email: user.email,
       // Los del rol, recortados a lo que la plataforma le habilita a la clínica.
       permissions: recortarPermisos(user.role.permissions, user.clinic?.entitlements) as any,

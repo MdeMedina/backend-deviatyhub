@@ -188,6 +188,8 @@ export interface IJwtPayload {
   role: UserRole;
   email: string;
   permissions: IPermissions;
+  /** Administrador de su clínica: la bandera roles.is_superadmin de su rol. */
+  isSuperadmin?: boolean;
   /** Superusuario de la plataforma (equipo Deviaty). */
   platformAdmin?: boolean;
   /** Módulos del panel que la plataforma le habilita a la clínica. */
