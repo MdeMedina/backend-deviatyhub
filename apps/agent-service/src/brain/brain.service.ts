@@ -39,6 +39,12 @@ export class BrainService {
       // las invenciones, y cambiarla no debería exigir tocar el código: se ajusta
       // en el .env del servidor y se reinicia el servicio.
       modelName: modelo,
+      // Sin tope, el SDK espera hasta 10 minutos y reintenta 6 veces: una sola
+      // llamada colgada dejaba sin respuesta a todas las clínicas detrás de ella.
+      // Si no responde a tiempo, el procesador manda un mensaje de respaldo y
+      // pasa la conversación al equipo.
+      timeout: Number(this.configService.get('OPENAI_TIMEOUT_MS')) || 25_000,
+      maxRetries: 1,
       // La familia gpt-5 y los modelos de razonamiento SOLO aceptan la
       // temperatura por defecto: enviarles 0 devuelve un 400 y el agente deja
       // de responder por completo. Se decide por el modelo, no a mano, para
@@ -63,6 +69,24 @@ export class BrainService {
     });
   }
 
+  /**
+   * El turno falló (el modelo no respondió a tiempo, se cayó la API, un error
+   * inesperado). El paciente no puede quedar sin respuesta: se le avisa y la
+   * conversación pasa al equipo, con el motivo en el hilo.
+   */
+  async responderFalla(conversationId: string, clinicId: string, error: string): Promise<string> {
+    const ajustes = ajustesDelAgente(
+      (await this.prisma.agentConfig.findUnique({ where: { clinicId }, select: { settings: true } }).catch(() => null))?.settings,
+    );
+    await this.humanTool
+      .escalate(conversationId, `El agente no pudo responder por un error técnico (${error.slice(0, 200)}).`)
+      .catch((e) => this.logger.error(`No se pudo derivar tras la falla: ${(e as Error).message}`));
+    const horario = ajustes.atencionHumana ? ` Te escribirán por aquí en horario de atención (${ajustes.atencionHumana}).` : '';
+    return ajustes.trato === 'usted'
+      ? `Disculpe, tuve un problema para responderle. Le paso con el equipo de la clínica para que le ayuden.${horario.replace('Te escribirán', 'Le escribirán')}`
+      : `Disculpa, tuve un problema para responderte. Te paso con el equipo de la clínica para que te ayuden.${horario}`;
+  }
+
   async processMessage(params: {
     conversationId: string;
     clinicId: string;
@@ -83,6 +107,23 @@ export class BrainService {
     const ajustes = ajustesDelAgente(
       (await this.prisma.agentConfig.findUnique({ where: { clinicId: params.clinicId }, select: { settings: true } }))?.settings,
     );
+
+    // Urgencia dental: no se deja a criterio del modelo. Antes dependía de que
+    // el agente decidiera llamar a la derivación, y un "me duele mucho la muela"
+    // podía terminar en una oferta de hora para pasado mañana (la clínica no
+    // agenda para el mismo día). Respuesta fija y a una persona, sin gastar
+    // una llamada al modelo.
+    if (!params.simulate && esUrgenciaDental(params.userInput)) {
+      await this.humanTool.escalate(params.conversationId, `Urgencia dental. El paciente escribió: "${String(params.userInput).slice(0, 300)}"`);
+      return {
+        text: mensajeUrgencia(ajustes.trato),
+        currentStep: params.currentStep,
+        intent: Intent.URGENCIA,
+        certainty: 1,
+        toolsUsed: ['escalate_to_human'],
+        usage: sumarUso(this.nombreModelo, [], false),
+      };
+    }
 
     // Una conversación que ya terminó su reserva vuelve a empezar de cero. Sin
     // esto, los datos de la reserva anterior seguían en metadata y cualquier
@@ -849,7 +890,8 @@ export class BrainService {
     const executor = new AgentExecutor({
       agent,
       tools: tools as any[],
-      verbose: true,
+      // Sin volcado: imprimía el prompt entero en los logs, con nombre, RUT y correo del paciente.
+      verbose: false,
       returnIntermediateSteps: true,
     });
 
@@ -934,7 +976,7 @@ export class BrainService {
         if (normalizado) {
           updatedBooking.rut = normalizado;
         } else {
-          this.logger.warn(`RUT descartado por inválido: "${updatedBooking.rut}".`);
+          this.logger.warn(`RUT descartado por inválido (${String(updatedBooking.rut || '').length} caracteres).`);
           updatedBooking.rut = '';
           rutRechazado = true;
         }
@@ -1020,7 +1062,8 @@ export class BrainService {
       });
       
     } catch (e) {
-      this.logger.warn(`No se pudo parsear el output de la IA como JSON estructurado: ${response.output}`);
+      // Sin volcar la salida: trae datos del paciente.
+      this.logger.warn(`No se pudo parsear el output de la IA como JSON estructurado (${String(response.output || '').length} caracteres).`);
       salidaIlegible = true;
     }
 
@@ -1063,7 +1106,7 @@ export class BrainService {
         const horario = ajustes.atencionHumana ? `, en horario de atención (${ajustes.atencionHumana})` : '';
         replyText =
           coordinacion.motivo === 'abono'
-            ? `${coordinacion.tratamiento} se reserva con un abono, así que la hora te la coordina directamente nuestro equipo. Ya les dejé tu solicitud y te escribirán por aquí${horario}.`
+            ? `${coordinacion.tratamiento} se reserva con un abono, así que la hora la coordina directamente nuestro equipo. Ya les dejé tu solicitud y te escribirán por aquí${horario}.`
             : `La agenda de ${coordinacion.profesional || coordinacion.tratamiento} la coordina directamente nuestro equipo. Ya les dejé tu solicitud y te escribirán por aquí${horario}.`;
         finalStep = 'human_takeover';
       }
@@ -1464,6 +1507,15 @@ export class BrainService {
       include: { doctors: { include: { doctor: true } } },
     });
     if (!t) return null;
+    // Un paciente que puede ser nuevo, en una clínica que exige evaluación
+    // primero, no reserva todavía lo que pidió: reserva la evaluación (gratis),
+    // y eso se decide en cuanto diga si ya vino. Si se mirara antes, un
+    // "quiero una endodoncia" de alguien que nunca vino recibía "se reserva
+    // con abono" y quedaba derivado, en vez de su evaluación.
+    if (ajustes.evaluacionPrimero && !t.isEvaluation && booking.paciente_nuevo !== 'no') {
+      const hayEvaluacion = await this.prisma.treatment.count({ where: { clinicId, isEvaluation: true } });
+      if (hayEvaluacion > 0) return null;
+    }
     if (t.requiresDeposit) return { motivo: 'abono', tratamiento: t.name };
     if (t.isEvaluation && ajustes.abonoEvaluacionRepetida && booking.paciente_nuevo === 'no') {
       return { motivo: 'abono', tratamiento: `La segunda evaluación` };
@@ -1896,8 +1948,29 @@ export function esUrgenciaDental(text: string): boolean {
     || /\bno\s+(aguanto|soporto|puedo\s+mas)\b/.test(t)
     || /\b(sangra|sangrando|sangrado|hemorragia)\b/.test(t)
     || /\b(se\s+me\s+)?(cayo|quebro|rompio|partio)\b[\s\S]{0,20}\b(diente|muela|corona|pieza)\b/.test(t)
-    || /\bdolor\b[\s\S]{0,20}\b(insoportable|fuerte|terrible|horrible|agudo)\b/.test(t)
+    || /\bdolor\b[\s\S]{0,20}\b(insoportable|fuerte|terrible|horrible|agudo|mucho|muchisimo|harto|demasiado)\b/.test(t)
+    || /\b(mucho|muchisimo|harto|demasiado)\s+dolor\b/.test(t)
+    // "me duele mucho la muela", "me duele muchísimo", "duele harto"
+    || /\bduele\w*\b[\s\S]{0,15}\b(mucho|muchisimo|harto|demasiado|caleta|horrible|terrible)\b/.test(t)
+    || /\bno\s+(puedo|pude|logro)\s+(dormir|comer|masticar|abrir\s+la\s+boca)\b/.test(t)
+    // Traumatismos: "me golpeé y se me soltó un diente", "se me salió la muela".
+    || /\b(golpe|golpee|golpeo|caida|accidente)\b[\s\S]{0,40}\b(diente|muela|boca|pieza)\b/.test(t)
+    || /\b(solto|suelto|salio|movi\w*|floj\w*)\b[\s\S]{0,20}\b(diente|muela|pieza)\b/.test(t)
+    || /\b(diente|muela|pieza)\b[\s\S]{0,20}\b(solto|suelto|salio|se\s+mueve|flojo|floja)\b/.test(t)
+    || /\bfiebre\b/.test(t)
     || /\b(hinch\w*|inflamad[oa]|absceso|flegmon|flemon)\b/.test(t);
+}
+
+/**
+ * Lo que recibe un paciente con una urgencia. Fijo: aquí no se improvisa. Va
+ * escrito en las dos formas porque adaptarTrato no cubre "estés" ni "acude".
+ */
+export function mensajeUrgencia(trato: 'tu' | 'usted'): string {
+  return trato === 'usted'
+    ? 'Lamento que esté con dolor. Le paso de inmediato con el equipo de la clínica para que le atiendan lo antes posible.\n\n' +
+        'Si está fuera del horario de atención, o tiene sangrado que no se detiene, hinchazón que aumenta o fiebre, acuda a un servicio de urgencia.'
+    : 'Lamento que estés con dolor. Te paso de inmediato con el equipo de la clínica para que te atiendan lo antes posible.\n\n' +
+        'Si estás fuera del horario de atención, o tienes sangrado que no se detiene, hinchazón que aumenta o fiebre, acude a un servicio de urgencia.';
 }
 
 /**

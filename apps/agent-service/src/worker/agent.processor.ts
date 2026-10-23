@@ -40,6 +40,17 @@ export function normalizarParaBucle(texto: string): string {
     .trim();
 }
 
+/**
+ * Un mensaje que llega con mucho retraso no se contesta solo. Meta reentrega
+ * mensajes viejos (el 10/10 llegó uno de hace 11 días y el agente lo contestó
+ * como si fuera nuevo); responder a destiempo confunde más que callar. Queda
+ * en la bandeja con una nota para que lo vea el equipo.
+ */
+export const MAX_RETRASO_MIN = 10;
+
+/** Cuántos mensajes se procesan a la vez. Los de un mismo paciente, siempre en orden. */
+export const CONCURRENCIA = Number(process.env.AGENT_CONCURRENCY) || 4;
+
 export function motivoDeBucle(
   entrantesRecientes: string[],
   textoActual: string,
@@ -62,10 +73,31 @@ export function motivoDeBucle(
 }
 
 @Injectable()
-@Processor('messages')
+// Antes, un solo mensaje a la vez para todas las clínicas: con dos pacientes
+// escribiendo juntos, el segundo esperaba entero el turno del primero (~7 s).
+@Processor('messages', { concurrency: CONCURRENCIA })
 export class AgentProcessor extends WorkerHost {
   private readonly logger = new Logger(AgentProcessor.name);
   private readonly enrutador: EnrutadorDeClinica;
+  /**
+   * Con varios mensajes en paralelo, los de un mismo remitente deben seguir
+   * en orden: dos turnos de la misma conversación a la vez pisarían la reserva
+   * en curso y podían crear dos conversaciones para un contacto nuevo. Hay una
+   * sola instancia del servicio, así que basta con una cola en memoria.
+   */
+  private readonly enCurso = new Map<string, Promise<unknown>>();
+
+  private async enOrden<T>(clave: string, fn: () => Promise<T>): Promise<T> {
+    const previa = this.enCurso.get(clave) ?? Promise.resolve();
+    const actual = previa.catch(() => undefined).then(fn);
+    const marca = actual.catch(() => undefined);
+    this.enCurso.set(clave, marca);
+    try {
+      return await actual;
+    } finally {
+      if (this.enCurso.get(clave) === marca) this.enCurso.delete(clave);
+    }
+  }
 
   constructor(
     @Inject(PrismaService)
@@ -99,7 +131,7 @@ export class AgentProcessor extends WorkerHost {
     clinicId: string;
     conversationId?: string;
     channel: string;
-    outcome: 'replied' | 'paused' | 'blocked' | 'takeover' | 'loop' | 'error';
+    outcome: 'replied' | 'paused' | 'blocked' | 'takeover' | 'loop' | 'stale' | 'error';
     intent?: string;
     usage?: UsoDelTurno;
     enviadoPorPaciente?: number | null;
@@ -135,6 +167,12 @@ export class AgentProcessor extends WorkerHost {
   }
 
   async process(job: Job<any, any, string>): Promise<any> {
+    const msg = job.data?.payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    const clave = msg?.from ? `wa:${msg.from}` : job.data?.conversation_id ? `conv:${job.data.conversation_id}` : `job:${job.id}`;
+    return this.enOrden(clave, () => this.procesar(job));
+  }
+
+  private async procesar(job: Job<any, any, string>): Promise<any> {
     let data = job.data;
     const inicio = Date.now();
     const webhookMs: number | null = typeof job.data?.webhookMs === 'number' ? job.data.webhookMs : null;
@@ -221,6 +259,24 @@ export class AgentProcessor extends WorkerHost {
         return;
       }
 
+      // 1.b'' Mensaje atrasado: no se contesta solo (ver MAX_RETRASO_MIN).
+      if (data.sent_at_ms && Date.now() - data.sent_at_ms > MAX_RETRASO_MIN * 60_000) {
+        const minutos = Math.round((Date.now() - data.sent_at_ms) / 60_000);
+        this.logger.warn(`Mensaje con ${minutos} min de retraso en ${conversation_id}: no se responde automáticamente.`);
+        const nota = await this.prisma.message.create({
+          data: {
+            conversationId: conversation_id,
+            clinicId: clinic_id,
+            role: 'SYSTEM',
+            content: `El agente no respondió el último mensaje porque llegó con ${minutos} minutos de retraso. Revísalo y contesta si hace falta.`,
+            sentAt: new Date(),
+          },
+        });
+        await this.notifyMessage(conversation_id, nota);
+        await this.registrarTurno({ ...turno, outcome: 'stale' });
+        return;
+      }
+
       // 1.c Corta-bucles, ANTES del modelo: un bucle no debe costar ni una
       //     llamada más. Si salta, la conversación pasa a una persona y el
       //     agente deja de contestar; el aviso queda en el hilo para que el
@@ -269,8 +325,12 @@ export class AgentProcessor extends WorkerHost {
         return;
       }
 
-      // 2. Ejecutar "Cerebro" (LLM)
-      const response = await this.brain.processMessage({
+      // 2. Ejecutar "Cerebro" (LLM). Si falla, el paciente igual recibe
+      //    respuesta y la conversación pasa al equipo (antes: excepción,
+      //    tres reintentos de BullMQ y silencio).
+      let response: Awaited<ReturnType<BrainService['processMessage']>>;
+      try {
+        response = await this.brain.processMessage({
         conversationId: conversation_id,
         clinicId: clinic_id,
         contact: conversation.contact as any,
@@ -279,6 +339,39 @@ export class AgentProcessor extends WorkerHost {
         currentStep: conversation.currentStep || 'inicio',
         metadata: conversation.metadata || {},
       });
+      } catch (e) {
+        const motivoFalla = (e as Error).message;
+        this.logger.error(`El agente falló en ${conversation_id}: ${motivoFalla}`);
+        const texto = await this.brain.responderFalla(conversation_id, clinic_id, motivoFalla);
+        const aviso = await this.prisma.message.create({
+          data: { conversationId: conversation_id, clinicId: clinic_id, role: 'ASSISTANT', content: texto, sentAt: new Date() },
+        });
+        await this.notifyMessage(conversation_id, aviso);
+        await this.eventBus.publish('message.outbound', {
+          conversationId: conversation_id,
+          clinicId: clinic_id,
+          recipient: (conversation.contact as any)?.phone || '',
+          content: texto,
+          channel: conversation.channel as any,
+        });
+        await this.registrarTurno({ ...turno, outcome: 'error', error: motivoFalla });
+        return;
+      }
+
+      // 2.b ¿Alguien del equipo tomó la conversación mientras el agente
+      //     pensaba? Entonces la respuesta ya no corresponde. Si la derivó el
+      //     propio agente en este turno, su mensaje sí sale ("le paso con...").
+      const ahora = await this.prisma.conversation.findUnique({
+        where: { id: conversation_id },
+        select: { status: true, metadata: true },
+      });
+      const derivadaEnEsteTurno =
+        Date.parse((ahora?.metadata as any)?.derivacion?.at ?? '') >= inicio;
+      if (ahora?.status === 'HUMAN_TAKEOVER' && !derivadaEnEsteTurno) {
+        this.logger.warn(`La conversación ${conversation_id} pasó a una persona durante el turno: no se envía la respuesta del agente.`);
+        await this.registrarTurno({ ...turno, outcome: 'takeover' });
+        return;
+      }
 
       // 3. Persistir respuesta en BDD
       const assistantMessage = await this.prisma.message.create({
@@ -303,6 +396,7 @@ export class AgentProcessor extends WorkerHost {
             where: { id: user_message_id },
             data: {
               langchainMeta: {
+                ...(data.wamid ? { wamid: data.wamid } : {}),
                 intent: (response as any).intent,
                 certainty: (response as any).certainty ?? null,
               },
@@ -352,6 +446,7 @@ export class AgentProcessor extends WorkerHost {
     conversation_id: string;
     user_message_id: string;
     sent_at_ms: number | null;
+    wamid: string | null;
   } | null> {
     const value = payload?.entry?.[0]?.changes?.[0]?.value;
     const msg = value?.messages?.[0];
@@ -408,13 +503,39 @@ export class AgentProcessor extends WorkerHost {
       });
     }
 
-    // Persistir el mensaje entrante (rol USER)
-    const userMessage = await this.prisma.message.create({
-      data: { conversationId: conversation.id, clinicId: clinic_id, role: 'USER', content: text, sentAt: new Date() },
-    });
+    // Persistir el mensaje entrante (rol USER). Una sola vez por mensaje de
+    // Meta: si BullMQ reintenta el trabajo o Meta reentrega el webhook, se
+    // reutiliza el que ya estaba en vez de duplicarlo en el hilo.
+    const wamid: string | null = msg.id || null;
+    const previo = wamid
+      ? await this.prisma.message.findFirst({
+          where: { conversationId: conversation.id, role: 'USER', langchainMeta: { path: ['wamid'], equals: wamid } },
+        })
+      : null;
+    if (previo) {
+      const respondido = await this.prisma.message.count({
+        where: { conversationId: conversation.id, role: { in: ['ASSISTANT'] }, sentAt: { gt: previo.sentAt ?? new Date(0) } },
+      });
+      if (respondido > 0) {
+        this.logger.log(`Mensaje ${wamid} ya procesado y respondido: se ignora la reentrega.`);
+        return null;
+      }
+    }
+    const userMessage =
+      previo ??
+      (await this.prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          clinicId: clinic_id,
+          role: 'USER',
+          content: text,
+          sentAt: new Date(),
+          ...(wamid ? { langchainMeta: { wamid } } : {}),
+        },
+      }));
 
     // El mensaje del paciente también tiene que aparecer en el panel al vuelo.
-    await this.notifyMessage(conversation.id, userMessage);
+    if (!previo) await this.notifyMessage(conversation.id, userMessage);
 
     return {
       contact_id: contact.id,
@@ -424,6 +545,7 @@ export class AgentProcessor extends WorkerHost {
       user_message_id: userMessage.id,
       // Cuándo lo envió el paciente según Meta (en segundos).
       sent_at_ms: Number(msg.timestamp) > 0 ? Number(msg.timestamp) * 1000 : null,
+      wamid,
     };
   }
 }

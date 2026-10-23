@@ -13,6 +13,10 @@ export class AgentFormatter {
       }
     }
 
+    // Las notas de sistema (derivaciones, corta-bucles) son para el equipo: el
+    // modelo las leería como si las hubiera dicho él.
+    filteredHistory = filteredHistory.filter((m) => String(m.role || '').toLowerCase() !== 'system');
+
     return filteredHistory.map(msg => {
       const role = msg.role?.toLowerCase();
       if (role === 'user' || role === 'human') {

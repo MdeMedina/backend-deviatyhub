@@ -126,7 +126,7 @@ export class ReminderService implements OnModuleInit, OnModuleDestroy {
     // Se marca DESPUÉS de publicar: si falla el envío, la siguiente pasada lo
     // reintenta en vez de darlo por hecho.
     await this.prisma.appointment.update({ where: { id: cita.id }, data: marcas });
-    this.logger.log(`Recordatorio de ${aEnviar.etiqueta} enviado a ${telefono} (cita ${cita.id}).`);
+    this.logger.log(`Recordatorio de ${aEnviar.etiqueta} enviado (cita ${cita.id}, tel. …${String(telefono).slice(-4)}).`);
   }
 
   private mensaje(cita: any, etiqueta: string, pedirConfirmacion = false): string {

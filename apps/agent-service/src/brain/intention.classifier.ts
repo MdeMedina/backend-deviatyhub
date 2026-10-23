@@ -41,6 +41,9 @@ export class IntentionClassifier {
       // El clasificador puede ir en un modelo más barato que el agente: su salida
       // es una etiqueta de un catálogo cerrado, no texto para un paciente.
       modelName: modelo,
+      // Con tope: sin él, una llamada colgada frenaba el turno hasta 10 minutos.
+      timeout: Number(this.configService.get('OPENAI_TIMEOUT_MS')) || 25_000,
+      maxRetries: 1,
       // La familia gpt-5 y los modelos de razonamiento SOLO aceptan la
       // temperatura por defecto: enviarles 0 devuelve un 400 y el agente deja
       // de responder por completo. Se decide por el modelo, no a mano, para

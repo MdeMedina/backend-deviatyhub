@@ -101,12 +101,14 @@ async function sendToMeta(event: any) {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
+        // Sin tope, una llamada a Meta colgada dejaba el envío esperando indefinidamente.
+        timeout: 15_000,
       }
     );
-    console.log(`✅ Mensaje enviado a ${recipient}`);
+    console.log(`✅ Mensaje enviado (tel. …${String(recipient).slice(-4)})`);
   } catch (error: any) {
     const errorMsg = error.response?.data?.error?.message || error.message;
-    console.error(`❌ Error enviando a ${recipient}: ${errorMsg}`);
+    console.error(`❌ Error enviando (tel. …${String(recipient).slice(-4)}): ${errorMsg}`);
     try {
       await prisma.message.create({
         data: {

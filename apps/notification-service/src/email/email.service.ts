@@ -50,4 +50,27 @@ export class EmailService {
       return false;
     }
   }
+
+  /**
+   * Aviso operativo al equipo de una clínica (derivaciones, citas por pasar a
+   * Dentalink). Sin plantilla: es texto corto y cambia más que los correos al
+   * paciente.
+   */
+  async sendTeamAlert(to: string[], subject: string, lineas: string[], enlace?: { url: string; texto: string }) {
+    if (!to.length) return false;
+    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html =
+      `<div style="font-family:Roboto,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1d2433">` +
+      lineas.map((l) => `<p style="margin:0 0 10px">${esc(l)}</p>`).join('') +
+      (enlace ? `<p style="margin:18px 0 0"><a href="${enlace.url}" style="background:#1f3a8a;color:#fff;padding:10px 16px;border-radius:7px;text-decoration:none">${esc(enlace.texto)}</a></p>` : '') +
+      `<p style="margin:22px 0 0;color:#8a8f9c;font-size:13px">Dentral · aviso automático</p></div>`;
+    try {
+      await this.mailerService.sendMail({ to, subject, html, text: lineas.join('\n\n') + (enlace ? `\n\n${enlace.url}` : '') });
+      this.logger.log(`Aviso al equipo enviado (${to.length} destinatario${to.length === 1 ? "" : "s"}).`);
+      return true;
+    } catch (error: any) {
+      this.logger.error(`Error enviando aviso al equipo: ${error.message}`);
+      return false;
+    }
+  }
 }
