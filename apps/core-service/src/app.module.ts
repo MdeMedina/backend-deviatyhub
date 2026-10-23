@@ -15,6 +15,7 @@ import { AgendaModule } from './agenda/agenda.module';
 import { ConversationModule } from './conversation/conversation.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { PlatformModule } from './platform/platform.module';
+import { DentalinkModule } from './dentalink/dentalink.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { PlatformModule } from './platform/platform.module';
     ConversationModule,
     MetricsModule,
     PlatformModule,
+    DentalinkModule,
   ],
   controllers: [],
   providers: [

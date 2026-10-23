@@ -1,4 +1,5 @@
-import { IsBoolean, IsDateString, IsEmail, IsIn, IsNumber, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, ValidateNested, IsBoolean, IsDateString, IsEmail, IsIn, IsNumber, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateClinicDto {
   @IsString()
@@ -124,4 +125,32 @@ export class PromptDto {
   @IsString()
   @MaxLength(200)
   note?: string;
+}
+
+export class DentalinkConfigDto {
+  /** Vacío = se conserva el que había. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  token?: string;
+
+  @IsOptional()
+  @IsNumber()
+  id_sucursal?: number;
+}
+
+export class DentalinkVinculoDto {
+  @IsString()
+  doctor_id!: string;
+
+  /** Id del profesional en Dentalink; null lo desvincula. */
+  @IsOptional()
+  external_id!: string | number | null;
+}
+
+export class DentalinkVinculosDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DentalinkVinculoDto)
+  links!: DentalinkVinculoDto[];
 }

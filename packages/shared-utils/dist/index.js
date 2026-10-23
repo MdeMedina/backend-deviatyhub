@@ -24,4 +24,5 @@ __exportStar(require("./paciente.util"), exports);
 __exportStar(require("./accesos.util"), exports);
 __exportStar(require("./ajustes.util"), exports);
 __exportStar(require("./prompt.base"), exports);
+__exportStar(require("./coordinacion.util"), exports);
 //# sourceMappingURL=index.js.map

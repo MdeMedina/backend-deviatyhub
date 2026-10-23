@@ -10,14 +10,42 @@ import {
 } from '@nestjs/common';
 import { Auditable, CurrentClinicId, CurrentUserId } from '@deviaty/shared-nestjs';
 import { AgendaService } from './agenda.service';
+import { DentalinkService } from '../dentalink/dentalink.service';
+import { PrismaService } from '@deviaty/shared-prisma';
 import { CreateAppointmentDto, UpdateStatusDto, RescheduleDto } from './dto/appointment.dto';
 
 @Controller('agenda')
 export class AgendaController {
   constructor(
     @Inject(AgendaService)
-    private readonly agendaService: AgendaService
+    private readonly agendaService: AgendaService,
+    @Inject(DentalinkService) private readonly dentalink: DentalinkService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
+
+  // ─── Coordinación con Dentalink ────────────────────────────────────
+
+  /** Citas agendadas, movidas o anuladas desde Dentral que falta repetir en Dentalink. */
+  @Get('coordination')
+  porCoordinar(@CurrentClinicId() clinicId: string) {
+    return this.dentalink.porCoordinar(clinicId);
+  }
+
+  @Post('appointments/:id/coordinated')
+  @Auditable('appointment')
+  async marcarCoordinada(
+    @CurrentClinicId() clinicId: string,
+    @CurrentUserId() userId: string,
+    @Param('id') id: string,
+  ) {
+    const u = userId ? await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } }) : null;
+    return this.dentalink.marcarCoordinada(clinicId, id, u?.email ?? 'personal');
+  }
+
+  @Post('coordination/sync')
+  sincronizarDentalink(@CurrentClinicId() clinicId: string) {
+    return this.dentalink.sincronizar(clinicId, 'manual');
+  }
 
   @Get('slots')
   async getSlots(

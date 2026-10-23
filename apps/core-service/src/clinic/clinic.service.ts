@@ -396,7 +396,7 @@ export class ClinicService {
         isOk = true;
       } else {
         try {
-          const res = await fetch('https://api.dentalink.healthatom.com/v1/sucursales', {
+          const res = await fetch('https://api.dentalink.healthatom.com/api/v1/sucursales', {
             headers: { Authorization: `Token ${token}` },
           });
           isOk = res.ok;

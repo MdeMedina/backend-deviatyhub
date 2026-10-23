@@ -1,6 +1,6 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '@deviaty/shared-prisma';
-import { generarCodigoCita } from '@deviaty/shared-utils';
+import { coordinacionTrasCambio, generarCodigoCita, usaDentalink } from '@deviaty/shared-utils';
 import { EventBus, REDIS_CHANNELS } from '@deviaty/shared-events';
 
 @Injectable()
@@ -111,6 +111,8 @@ export class AppointmentActionsTool {
           durationMin: params.durationMin,
           status: 'CONFIRMED',
           source: 'AGENT',
+          // Con Dentalink como agenda oficial, el personal tiene que pasarla allí.
+          ...((await usaDentalink(tx, clinicId)) ? coordinacionTrasCambio('crear') : {}),
           code: await this.codigoLibre(tx),
           extraAnswer: params.extraAnswer ?? null,
         },
@@ -192,6 +194,7 @@ export class AppointmentActionsTool {
         data: {
           status: 'CANCELLED',
           notes: reason || appointment.notes,
+          ...((await usaDentalink(tx, clinicId)) ? coordinacionTrasCambio('anular', appointment as any) : {}),
         },
       });
 
@@ -262,6 +265,11 @@ export class AppointmentActionsTool {
           scheduledAt: newDate,
           status: 'RESCHEDULED',
           notes: reason || appointment.notes,
+          // Hora nueva, avisos nuevos: sin esto, una cita movida se quedaba sin recordatorio.
+          reminder3dSent: false,
+          reminder1dSent: false,
+          reminder1hSent: false,
+          ...((await usaDentalink(tx, clinicId)) ? coordinacionTrasCambio('mover', appointment as any) : {}),
         },
       });
 

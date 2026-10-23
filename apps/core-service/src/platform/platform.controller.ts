@@ -5,10 +5,11 @@ import { PlatformService } from './platform.service';
 import { PlatformWhatsAppService } from './platform-whatsapp.service';
 import { PlatformMetricsService } from './platform-metrics.service';
 import { PlatformPromptService } from './platform-prompt.service';
+import { DentalinkService } from '../dentalink/dentalink.service';
 import { ImpactService } from '../metrics/impact.service';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { ajustesDelAgente } from '@deviaty/shared-utils';
-import { AgentSettingsDto, PromptDto, CommercialDto, CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto, WhatsAppOwnDto } from './dto/platform.dto';
+import { AgentSettingsDto, PromptDto, CommercialDto, CreateClinicDto, InviteClinicUserDto, UpdateAccessDto, UpdateClinicDto, WhatsAppOwnDto, DentalinkConfigDto, DentalinkVinculosDto } from './dto/platform.dto';
 
 /** Backoffice del equipo de la plataforma. Nada de aquí depende de la clínica del usuario. */
 @Controller('platform')
@@ -21,6 +22,7 @@ export class PlatformController {
     @Inject(ImpactService) private readonly impacto: ImpactService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(PlatformPromptService) private readonly prompts: PlatformPromptService,
+    @Inject(DentalinkService) private readonly dentalink: DentalinkService,
   ) {}
 
   // ─── Prompt del agente de cada clínica ────────────────────────────
@@ -141,6 +143,38 @@ export class PlatformController {
   @Delete('clinics/:id/whatsapp')
   whatsappDesconectar(@Param('id', ParseUUIDPipe) id: string) {
     return this.whatsapp.desconectar(id);
+  }
+
+  // ─── Dentalink de cada clínica ─────────────────────────────────────
+
+  @Get('clinics/:id/dentalink')
+  dentalinkEstado(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dentalink.estado(id);
+  }
+
+  @Put('clinics/:id/dentalink')
+  dentalinkConfigurar(@Param('id', ParseUUIDPipe) id: string, @Body() dto: DentalinkConfigDto) {
+    return this.dentalink.configurar(id, dto);
+  }
+
+  @Get('clinics/:id/dentalink/dentistas')
+  dentalinkDentistas(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dentalink.dentistas(id);
+  }
+
+  @Put('clinics/:id/dentalink/doctors')
+  dentalinkVincular(@Param('id', ParseUUIDPipe) id: string, @Body() dto: DentalinkVinculosDto) {
+    return this.dentalink.vincular(id, dto.links);
+  }
+
+  @Post('clinics/:id/dentalink/sync')
+  dentalinkSincronizar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dentalink.sincronizar(id, 'manual');
+  }
+
+  @Delete('clinics/:id/dentalink')
+  dentalinkDesconectar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dentalink.desconectar(id);
   }
 
   @Get('overview')

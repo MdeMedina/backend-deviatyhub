@@ -328,6 +328,10 @@ model Doctor {
   /// agenda abierta (atiende "a conveniencia" o por citas puntuales); el agente
   /// no le ofrece horas, toma la solicitud y se la pasa al equipo.
   bookingMode String  @default("agenda") @map("booking_mode")
+  /// Id del profesional en la agenda oficial de la clínica (id_dentista en
+  /// Dentalink). Con él se asignan al profesional correcto las citas que trae
+  /// la coordinación diaria.
+  externalId  String? @map("external_id")
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -384,6 +388,9 @@ model DoctorAbsence {
   endsAt    DateTime  @map("ends_at") @db.Timestamptz
   allDay    Boolean?  @default(false) @map("all_day")
   reason    String?
+  /// Bloqueo traído de Dentalink ("dentalink:<id>"). Lo mantiene la
+  /// sincronización: se actualiza o se borra según lo que haya allí.
+  externalId String?  @map("external_id")
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -391,6 +398,7 @@ model DoctorAbsence {
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 
   @@index([clinicId, doctorId, startsAt])
+  @@index([clinicId, externalId])
   @@map("doctor_absences")
 }
 
@@ -485,6 +493,18 @@ model Appointment {
   code           String?           @unique
   /// Respuesta a la pregunta del tratamiento, p. ej. la pieza en una endodoncia.
   extraAnswer    String?           @map("extra_answer")
+  /// Coordinación con la agenda oficial de la clínica (Dentalink), que es la
+  /// que manda. Lo que el agente agenda, mueve o anula por chat lo tiene que
+  /// repetir el personal en Dentalink: mientras no lo haga, la cita queda
+  /// "pendiente" con la acción por hacer. La sincronización la da por
+  /// "coordinada" cuando encuentra el cambio en Dentalink. Vacío: no aplica
+  /// (clínica sin Dentalink, o cita que vino de allí).
+  coordination       String?   @map("coordination")
+  /// "crear", "mover" o "anular": lo que falta hacer en Dentalink.
+  coordinationAction String?   @map("coordination_action")
+  coordinatedAt      DateTime? @map("coordinated_at") @db.Timestamptz
+  /// Quién la dio por coordinada: "dentalink" (la encontró la sincronización) o el correo de quien la marcó.
+  coordinatedBy      String?   @map("coordinated_by")
   reminder3dSent Boolean?          @default(false) @map("reminder_3d_sent")
   reminder1dSent Boolean?          @default(false) @map("reminder_1d_sent")
   reminder1hSent Boolean?          @default(false) @map("reminder_1h_sent")
@@ -500,6 +520,8 @@ model Appointment {
 
   @@index([clinicId, scheduledAt])
   @@index([clinicId, status])
+  @@index([clinicId, externalId])
+  @@index([clinicId, coordination])
   @@map("appointments")
 }
 

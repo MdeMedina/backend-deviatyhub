@@ -1,6 +1,6 @@
 import { Injectable, Inject, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '@deviaty/shared-prisma';
-import { calcularHorasLibres } from '@deviaty/shared-utils';
+import { calcularHorasLibres, coordinacionTrasCambio, usaDentalink } from '@deviaty/shared-utils';
 import { EventBus, REDIS_CHANNELS } from '@deviaty/shared-events';
 
 @Injectable()
@@ -187,7 +187,8 @@ export class AgendaService {
 
       if (overlap) throw new BadRequestException('El horario ya está ocupado');
 
-      // 4. Crear cita
+      // 4. Crear cita. Con Dentalink, queda pendiente de pasar allí.
+      const conDentalink = await usaDentalink(tx, clinicId);
       const appointment = await tx.appointment.create({
         data: {
           clinicId,
@@ -200,6 +201,7 @@ export class AgendaService {
           ...(conversation_id ? { conversationId: conversation_id } : {}),
           ...(source ? { source } : {}),
           ...(notes ? { notes } : {}),
+          ...(conDentalink && source !== 'EXTERNAL' ? coordinacionTrasCambio('crear') : {}),
         },
       });
 
@@ -222,9 +224,11 @@ export class AgendaService {
     const appointment = await this.findOneAppointment(clinicId, id);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      const anula = String(status).toUpperCase() === 'CANCELLED' && appointment.status !== 'CANCELLED';
+      const coordinacion = anula && (await usaDentalink(tx, clinicId)) ? coordinacionTrasCambio('anular', appointment as any) : {};
       const res = await tx.appointment.update({
         where: { id },
-        data: { status: status as any, notes: notes || appointment.notes },
+        data: { status: status as any, notes: notes || appointment.notes, ...coordinacion },
       });
 
       await tx.appointmentHistory.create({
@@ -284,7 +288,12 @@ export class AgendaService {
         data: { 
             scheduledAt: newDate, 
             status: 'RESCHEDULED',
-            notes: notes || appointment.notes
+            notes: notes || appointment.notes,
+            // Hora nueva, avisos nuevos: sin esto, una cita movida se quedaba sin recordatorio.
+            reminder3dSent: false,
+            reminder1dSent: false,
+            reminder1hSent: false,
+            ...((await usaDentalink(tx, clinicId)) ? coordinacionTrasCambio('mover', appointment as any) : {}),
         },
       });
 
