@@ -1,19 +1,4 @@
-import { IsEmail, IsString, MinLength, IsUUID } from 'class-validator';
-
-export class RegisterDto {
-  @IsEmail()
-  email!: string;
-
-  @IsString()
-  @MinLength(8)
-  password!: string;
-
-  @IsUUID()
-  clinic_id!: string;
-
-  @IsUUID()
-  role_id!: string;
-}
+import { IsEmail, IsString } from 'class-validator';
 
 export class LoginDto {
   @IsEmail()

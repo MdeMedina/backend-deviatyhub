@@ -10,8 +10,8 @@ const PLATFORM_PREFIX = '/api/core/platform';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Sin /api/auth/register: las cuentas se crean solo por invitación.
 const PUBLIC_PATHS = new Set([
-  '/api/auth/register',
   '/api/auth/login',
   '/api/auth/refresh',
   '/api/auth/set-password',
