@@ -119,7 +119,7 @@ export class ConversationService {
       },
     });
 
-    this.gateway.emitEvent('conversation.status_changed', {
+    this.gateway.emitToClinic(clinicId, 'conversation.status_changed', {
       conversation_id: id,
       status: 'HUMAN_TAKEOVER',
     });
@@ -145,7 +145,7 @@ export class ConversationService {
       },
     });
 
-    this.gateway.emitEvent('conversation.status_changed', {
+    this.gateway.emitToClinic(clinicId, 'conversation.status_changed', {
       conversation_id: id,
       status: 'OPEN',
     });
@@ -189,7 +189,7 @@ export class ConversationService {
       this.logger?.warn?.(`Conversación ${id} sin teléfono de contacto: el mensaje manual no se envía.`);
     }
 
-    this.gateway.emitEvent('conversation.message', {
+    this.gateway.emitToClinic(clinicId, 'conversation.message', {
       conversation_id: id,
       message,
     });

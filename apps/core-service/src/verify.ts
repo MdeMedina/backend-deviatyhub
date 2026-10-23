@@ -67,8 +67,8 @@ async function verifyCoreService() {
 
   const mockConfig = { get: (k: string, d: string) => d };
   const mockGateway = {
-    emitEvent: (event: string, payload: any) => {
-      console.log(`[Mock Gateway] Emitted ${event}:`, payload);
+    emitToClinic: (clinicId: string, event: string, payload: any) => {
+      console.log(`[Mock Gateway] Emitted ${event} to clinic ${clinicId}:`, payload);
     }
   };
 

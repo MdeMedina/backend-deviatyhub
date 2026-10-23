@@ -10,7 +10,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, RefreshTokenDto } from './dto/auth.dto';
+import { LoginDto, RefreshTokenDto } from './dto/auth.dto';
 import { SetPasswordDto } from '../users/dto/users.dto';
 import { Public } from '../common/decorators/public.decorator';
 
@@ -25,12 +25,10 @@ export class AuthController {
     this.logger.log('AuthController initialized');
   }
 
-  @Public()
-  @Post('register')
-  register(@Body() registerDto: RegisterDto) {
-    this.logger.log(`register - registering email: ${registerDto.email}`);
-    return this.authService.register(registerDto);
-  }
+  // No hay registro público: las cuentas se crean solo por invitación
+  // (POST /auth/users/invite). El antiguo /auth/register aceptaba la clínica y
+  // el rol que mandara cualquiera, y dejaba quedarse con un correo de
+  // PLATFORM_ADMIN_EMAILS que aún no tuviera cuenta.
 
   @Public()
   @Post('login')

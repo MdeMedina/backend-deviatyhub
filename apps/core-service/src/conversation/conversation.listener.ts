@@ -21,13 +21,38 @@ export class ConversationListener implements OnModuleInit {
     private readonly gateway: ConversationGateway,
   ) {}
 
+  /**
+   * Clínica a la que pertenece un evento, para emitirlo solo en su sala. Se
+   * saca de la base (la conversación o la cita) y no del payload: lo que diga
+   * el evento no decide quién lo recibe. El clinicId del payload queda como
+   * último recurso.
+   */
+  private async clinicaDelEvento(payload: any): Promise<string | null> {
+    const conversationId = payload?.conversationId;
+    if (conversationId) {
+      const conv = await this.prisma.conversation
+        .findUnique({ where: { id: conversationId }, select: { clinicId: true } })
+        .catch(() => null);
+      if (conv) return conv.clinicId;
+    }
+    const appointmentId = payload?.appointmentId;
+    if (appointmentId) {
+      const cita = await this.prisma.appointment
+        .findUnique({ where: { id: appointmentId }, select: { clinicId: true } })
+        .catch(() => null);
+      if (cita) return cita.clinicId;
+    }
+    return typeof payload?.clinicId === 'string' ? payload.clinicId : null;
+  }
+
   async onModuleInit() {
     this.logger.log('Registrando listeners Redis de conversaciones...');
 
-    const emitAction = (action: string) => (payload: any) => {
+    const emitAction = (action: string) => async (payload: any) => {
       const conversationId = payload?.conversationId;
       const appointmentId = payload?.appointmentId;
-      this.gateway.emitEvent('conversation.action_executed', {
+      const clinicId = await this.clinicaDelEvento(payload);
+      this.gateway.emitToClinic(clinicId, 'conversation.action_executed', {
         conversation_id: conversationId,
         action,
         appointment_id: appointmentId,
@@ -39,7 +64,8 @@ export class ConversationListener implements OnModuleInit {
     await this.eventBus.subscribe(REDIS_CHANNELS.CONVERSATION_MESSAGE, async (payload: any) => {
       const conversationId = payload?.conversationId;
       if (!conversationId) return;
-      this.gateway.emitEvent('conversation.message', {
+      const clinicId = await this.clinicaDelEvento(payload);
+      this.gateway.emitToClinic(clinicId, 'conversation.message', {
         conversation_id: conversationId,
         message: payload?.message ?? null,
       });
@@ -64,7 +90,8 @@ export class ConversationListener implements OnModuleInit {
         );
       }
 
-      this.gateway.emitEvent('conversation.status_changed', {
+      const clinicId = await this.clinicaDelEvento(payload);
+      this.gateway.emitToClinic(clinicId, 'conversation.status_changed', {
         conversation_id: conversationId,
         status: 'HUMAN_TAKEOVER',
         assigned_user_id: null,

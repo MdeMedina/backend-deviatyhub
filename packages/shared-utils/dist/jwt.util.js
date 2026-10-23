@@ -44,15 +44,18 @@ const jwt = __importStar(require("jsonwebtoken"));
  * @param expiresIn Tiempo de expiración (ej: '10m', '7d')
  */
 function signJWT(payload, secret, expiresIn) {
-    return jwt.sign(payload, secret, { expiresIn: expiresIn });
+    return jwt.sign(payload, secret, { expiresIn: expiresIn, algorithm: 'HS256' });
 }
 /**
  * Verifica un token JWT
  * @param token Token a verificar
  * @param secret Clave secreta
+ *
+ * Solo se acepta HS256, que es con lo que firma signJWT: así no se puede
+ * colar un token con otro algoritmo (ni "none").
  */
 function verifyJWT(token, secret) {
-    return jwt.verify(token, secret);
+    return jwt.verify(token, secret, { algorithms: ['HS256'] });
 }
 /**
  * Extrae el JTI (JWT ID) de un token sin verificar la firma (útil para blacklist)

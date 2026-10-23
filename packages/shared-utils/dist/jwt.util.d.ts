@@ -10,6 +10,9 @@ export declare function signJWT(payload: string | Buffer | object, secret: jwt.S
  * Verifica un token JWT
  * @param token Token a verificar
  * @param secret Clave secreta
+ *
+ * Solo se acepta HS256, que es con lo que firma signJWT: así no se puede
+ * colar un token con otro algoritmo (ni "none").
  */
 export declare function verifyJWT<T>(token: string, secret: jwt.Secret): T;
 /**

@@ -10,8 +10,8 @@ const PLATFORM_PREFIX = '/api/core/platform';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Sin /api/auth/register: las cuentas se crean solo por invitación.
 const PUBLIC_PATHS = new Set([
-  '/api/auth/register',
   '/api/auth/login',
   '/api/auth/refresh',
   '/api/auth/set-password',
@@ -62,7 +62,10 @@ export class ProxyModule implements OnModuleInit {
             const payload = verifyJWT<any>(jwtToken, secret);
             clinicId = payload.clinicId;
             userId = payload.userId;
-            isSuperadmin = String(payload.role === 'SUPERADMIN');
+            // La bandera del rol (roles.is_superadmin) que firma auth-service,
+            // no el nombre del rol: cualquiera podía crear uno llamado
+            // "SUPERADMIN". Un token anterior sin la bandera cuenta como no.
+            isSuperadmin = String(payload.isSuperadmin === true);
             platformAdmin = payload.platformAdmin === true;
             modulos = payload.modules;
 
@@ -152,6 +155,10 @@ export class ProxyModule implements OnModuleInit {
         return (reply as any).from(targetUrl, {
           rewriteRequestHeaders: (originalReq: any, headers: any) => {
             const newHeaders = { ...headers };
+            // Las cabeceras de identidad las pone solo el gateway. Sin token
+            // (rutas públicas) se pasaban tal cual las mandara el cliente.
+            delete newHeaders['x-clinic-id'];
+            delete newHeaders['x-user-id'];
             if (clinicId) {
               newHeaders['x-clinic-id'] = clinicId;
             }

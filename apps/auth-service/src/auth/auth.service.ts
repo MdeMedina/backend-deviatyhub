@@ -1,10 +1,10 @@
-import { Injectable, UnauthorizedException, ConflictException, Inject, BadRequestException, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Inject, BadRequestException, Logger, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@deviaty/shared-prisma';
-import { RegisterDto, LoginDto } from './dto/auth.dto';
+import { LoginDto } from './dto/auth.dto';
 import { hashBcrypt, compareBcrypt, signJWT, verifyJWT, recortarPermisos, modulosDeClinica } from '@deviaty/shared-utils';
 import { IJwtPayload } from '@deviaty/shared-types';
-import { REDIS_CHANNELS, EventBus } from '@deviaty/shared-events';
+import { EventBus } from '@deviaty/shared-events';
 import { createHash, randomUUID } from 'crypto';
 
 /**
@@ -53,48 +53,6 @@ export class AuthService {
   }
 
 
-  async register(dto: RegisterDto) {
-    this.logger.log(`register - Attempting to register email: ${dto.email}`);
-    // 1. Verificar si el usuario ya existe
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
-
-    if (existingUser) {
-      this.logger.warn(`register - Email: ${dto.email} is already registered`);
-      throw new ConflictException('El correo ya está registrado');
-    }
-
-    // 2. Hashear password
-    const passwordHash = await hashBcrypt(dto.password);
-
-    // 3. Crear usuario
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        clinicId: dto.clinic_id,
-        roleId: dto.role_id,
-      },
-      select: {
-        id: true,
-        email: true,
-        clinicId: true,
-        createdAt: true,
-      },
-    });
-
-    this.logger.log(`register - User: ${user.id} registered successfully. Publishing USER_CREATED event.`);
-    // 4. Publicar evento
-    await this.eventBus.publish(REDIS_CHANNELS.USER_CREATED, {
-      userId: user.id,
-      email: user.email,
-      clinicId: user.clinicId,
-    });
-
-    return user;
-  }
-
   async login(dto: LoginDto) {
     this.logger.log(`login - Attempting login for email: ${dto.email}`);
     // 1. Buscar usuario
@@ -122,6 +80,9 @@ export class AuthService {
       userId: user.id,
       clinicId: user.clinicId,
       role: user.role.name as any,
+      // Lo que vale es la bandera del rol, no su nombre: cualquiera podía
+      // crear un rol llamado "SUPERADMIN".
+      isSuperadmin: user.role.isSuperadmin === true,
       email: user.email,
       // Los del rol, recortados a lo que la plataforma le habilita a la clínica.
       permissions: recortarPermisos(user.role.permissions, user.clinic?.entitlements) as any,
@@ -338,6 +299,9 @@ export class AuthService {
       userId: user.id,
       clinicId: user.clinicId,
       role: user.role.name as any,
+      // Lo que vale es la bandera del rol, no su nombre: cualquiera podía
+      // crear un rol llamado "SUPERADMIN".
+      isSuperadmin: user.role.isSuperadmin === true,
       email: user.email,
       // Los del rol, recortados a lo que la plataforma le habilita a la clínica.
       permissions: recortarPermisos(user.role.permissions, user.clinic?.entitlements) as any,

@@ -11,9 +11,11 @@ import {
   ParseUUIDPipe,
   Logger,
 } from '@nestjs/common';
+import { PrismaService } from '@deviaty/shared-prisma';
 import { RolesService } from './roles.service';
 import { CreateRoleDto, UpdatePermissionsDto } from './dto/roles.dto';
 import { Auditable } from '../common/decorators/auditable.decorator';
+import { cargarActor } from '../common/actor';
 
 @Controller('auth/roles')
 export class RolesController {
@@ -22,23 +24,24 @@ export class RolesController {
   constructor(
     @Inject(RolesService)
     private readonly rolesService: RolesService,
+    @Inject(PrismaService)
+    private readonly prisma: PrismaService,
   ) {
     this.logger.log('RolesController initialized');
   }
 
   @Post()
   @Auditable('role')
-  create(
+  async create(
     @Headers('x-clinic-id') clinicId: string,
-    @Headers('x-is-superadmin') isSuperadmin: string,
+    @Headers('x-user-id') userId: string,
     @Body() createRoleDto: CreateRoleDto,
   ) {
     this.logger.log(`Creating role: "${createRoleDto.name}" for clinicId: ${clinicId}`);
-    return this.rolesService.createRole(
-      clinicId,
-      createRoleDto,
-      isSuperadmin === 'true',
-    );
+    // Quién es administrador se mira en la base (roles.is_superadmin), no en
+    // la cabecera x-is-superadmin.
+    const actor = await cargarActor(this.prisma, userId, clinicId);
+    return this.rolesService.createRole(clinicId, actor, createRoleDto);
   }
 
   @Get()
@@ -49,23 +52,27 @@ export class RolesController {
 
   @Patch(':id')
   @Auditable('role')
-  update(
+  async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Headers('x-clinic-id') clinicId: string,
+    @Headers('x-user-id') userId: string,
     @Body() updatePermissionsDto: UpdatePermissionsDto,
   ) {
     this.logger.log(`Updating permissions for role: ${id} under clinicId: ${clinicId}`);
-    return this.rolesService.updatePermissions(id, clinicId, updatePermissionsDto);
+    const actor = await cargarActor(this.prisma, userId, clinicId);
+    return this.rolesService.updatePermissions(id, clinicId, actor, updatePermissionsDto);
   }
 
   @Delete(':id')
   @Auditable('role')
-  remove(
+  async remove(
     @Param('id', ParseUUIDPipe) id: string,
     @Headers('x-clinic-id') clinicId: string,
+    @Headers('x-user-id') userId: string,
   ) {
     this.logger.log(`Deleting role: ${id} under clinicId: ${clinicId}`);
-    return this.rolesService.deleteRole(id, clinicId);
+    const actor = await cargarActor(this.prisma, userId, clinicId);
+    return this.rolesService.deleteRole(id, clinicId, actor);
   }
 }
 

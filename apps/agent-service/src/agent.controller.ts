@@ -16,6 +16,8 @@ import { PrismaService } from '@deviaty/shared-prisma';
 import { BrainService } from './brain/brain.service';
 import { agenteHabilitado } from '@deviaty/shared-utils';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Controller('agent')
 export class AgentController {
   private readonly logger = new Logger(AgentController.name);
@@ -85,9 +87,13 @@ export class AgentController {
 
     let conversation;
 
-    if (session_id) {
-      conversation = await this.prisma.conversation.findUnique({
-        where: { id: session_id },
+    // La sesión tiene que ser una conversación del simulador de ESTA clínica.
+    // Antes se buscaba solo por id: con el id de una conversación ajena (o de
+    // un WhatsApp real) el simulador leía su historial y escribía en ella. Si
+    // no es así, se trata como una sesión nueva.
+    if (session_id && UUID.test(session_id)) {
+      conversation = await this.prisma.conversation.findFirst({
+        where: { id: session_id, clinicId, channel: 'SIMULATOR' },
         include: { contact: true },
       });
     }

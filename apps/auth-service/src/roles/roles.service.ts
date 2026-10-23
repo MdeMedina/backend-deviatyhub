@@ -1,6 +1,7 @@
 import { Injectable, ConflictException, ForbiddenException, Inject, Logger } from '@nestjs/common';
 import { PrismaService } from '@deviaty/shared-prisma';
 import { CreateRoleDto, UpdatePermissionsDto } from './dto/roles.dto';
+import { Actor, exigir } from '../common/actor';
 
 @Injectable()
 export class RolesService {
@@ -13,8 +14,26 @@ export class RolesService {
     this.logger.log('RolesService initialized');
   }
 
-  async createRole(clinicId: string, dto: CreateRoleDto, creatorIsSuperadmin: boolean) {
+  /**
+   * Los roles se gestionan con users.edit, el mismo permiso con el que el
+   * panel deja editarlos. Antes no se pedía nada: cualquiera de la clínica
+   * podía crear un rol con todos los permisos o tocar el suyo.
+   */
+  private comprobarRolEditable(actor: Actor, role: { id: string; isSuperadmin: boolean | null }) {
+    exigir(actor, 'users.edit');
+    if (role.isSuperadmin && !actor.admin) {
+      throw new ForbiddenException('Solo un administrador puede modificar el rol de administrador');
+    }
+    // Quien no es administrador no se amplía los permisos a sí mismo.
+    if (role.id === actor.roleId && !actor.admin) {
+      throw new ForbiddenException('No puedes modificar tu propio rol');
+    }
+  }
+
+  async createRole(clinicId: string, actor: Actor, dto: CreateRoleDto) {
+    const creatorIsSuperadmin = actor.admin;
     this.logger.log(`createRole - clinicId: ${clinicId}, roleName: ${dto.name}, creatorIsSuperadmin: ${creatorIsSuperadmin}`);
+    exigir(actor, 'users.edit');
     // Solo un superadmin puede crear otro rol de superadmin
     if (dto.isSuperadmin && !creatorIsSuperadmin) {
       this.logger.warn(`createRole - Unauthorized creation attempt of Superadmin role by non-superadmin in clinicId: ${clinicId}`);
@@ -38,7 +57,7 @@ export class RolesService {
     });
   }
 
-  async updatePermissions(roleId: string, clinicId: string, dto: UpdatePermissionsDto) {
+  async updatePermissions(roleId: string, clinicId: string, actor: Actor, dto: UpdatePermissionsDto) {
     this.logger.log(`updatePermissions - roleId: ${roleId}, clinicId: ${clinicId}`);
     // Validar propiedad del rol
     const role = await this.prisma.role.findUnique({
@@ -49,6 +68,7 @@ export class RolesService {
       this.logger.warn(`updatePermissions - Role not found or clinic mismatch. roleId: ${roleId}, clinicId: ${clinicId}`);
       throw new ForbiddenException('No tienes permiso para modificar este rol');
     }
+    this.comprobarRolEditable(actor, role);
 
     return this.prisma.role.update({
       where: { id: roleId },
@@ -58,7 +78,7 @@ export class RolesService {
     });
   }
 
-  async deleteRole(roleId: string, clinicId: string) {
+  async deleteRole(roleId: string, clinicId: string, actor: Actor) {
     this.logger.log(`deleteRole - roleId: ${roleId}, clinicId: ${clinicId}`);
     // 1. Verificar existencia y pertenencia
     const role = await this.prisma.role.findUnique({
@@ -70,6 +90,7 @@ export class RolesService {
       this.logger.warn(`deleteRole - Role not found or clinic mismatch. roleId: ${roleId}, clinicId: ${clinicId}`);
       throw new ForbiddenException('No tienes permiso para eliminar este rol');
     }
+    this.comprobarRolEditable(actor, role);
 
     // 2. Verificar si tiene usuarios vinculados
     if (role._count.users > 0) {
